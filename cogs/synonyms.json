@@ -1,0 +1,50 @@
+{
+  "categories": {
+    "video_games": ["gaming", "video games", "games", "genshin", "gacha", "pjsk", "hollow knight", "hoyo", "hsr", "minecraft", "fnaf"],
+    "anime_manga": ["anime", "manga", "jjk", "kny", "one piece", "death note"],
+    "music": ["music", "citypop", "indie music", "kpop", "jpop"],
+    "reading_writing": ["reading", "books", "fanfiction", "ff", "novels"],
+    "arts_crafts": ["art", "drawing", "digital art", "graphic design"],
+    "photography": ["photography", "pfp", "matching pfps"],
+    "cooking_baking": ["cooking", "baking", "brownies", "cakes"],
+    "vehicles": ["bike", "bikes", "car", "cars", "biker"],
+    "movies_tv": ["movies", "films", "the boys", "dexter", "lucifer", "documentaries"],
+    "true_crime_paranormal": ["true crime", "creepypasta", "analog horror", "horror"],
+    "social_communication": ["vc", "voice chat", "vcing", "chatting", "texting", "yapping"]
+  },
+  "families": {
+    "video_games": "fiction_media",
+    "anime_manga": "fiction_media",
+    "movies_tv": "fiction_media",
+    "reading_writing": "fiction_media",
+    "music": "creative_family",
+    "arts_crafts": "creative_family",
+    "photography": "creative_family",
+    "vehicles": "mechanical_family",
+    "cooking_baking": "home_family",
+    "social_communication": "social_family"
+  },
+  "tz_abbreviations": {
+    "ist": 5.5,
+    "pkt": 5,
+    "est": -5,
+    "pst": -8
+  },
+  "trait_clusters": {
+    "empathic": ["empathetic", "caring", "kind", "supportive", "understanding"],
+    "communicative": ["talkative", "chatty", "yapper", "vocal", "communicative"],
+    "introverted": ["shy", "introverted", "reserved"],
+    "energetic": ["bubbly", "energetic", "hyper"],
+    "analytical": ["observant", "analytical", "practical", "smart"]
+  },
+  "energy_keywords": {
+    "shy": 0.2,
+    "introverted": 0.2,
+    "calm": 0.35,
+    "chill": 0.4,
+    "talkative": 0.75,
+    "chatty": 0.75,
+    "bubbly": 0.9,
+    "energetic": 0.9
+  }
+}
