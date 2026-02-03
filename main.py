@@ -1,5 +1,5 @@
 import sys
-import google.generativeai as genai
+import google.genai as genai
 print(f"PYTHON EXECUTABLE: {sys.executable}")
 print(f"GEMINI VERSION: {genai.__version__}")
 
