@@ -1,9 +1,5 @@
-import sys
-import google.genai as genai
-print(f"PYTHON EXECUTABLE: {sys.executable}")
-print(f"GEMINI VERSION: {genai.__version__}")
-
 import os
+import sys
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
@@ -164,8 +160,6 @@ async def help_command(ctx):
 async def ping(ctx):
     latency = round(bot.latency * 1000)  # Latency in milliseconds
     await ctx.send(f'Pong! Latency: {latency}ms')
-
-
 
 # Run the bot
 if __name__ == "__main__":
