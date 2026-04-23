@@ -154,7 +154,7 @@ class QuizView(discord.ui.View):
             else:
                 self.build_buttons()
                 # Edit the original message directly since we already deferred
-                await interaction.message.edit(embed=self.get_embed(), view=self)
+                await interaction.edit_original_response(embed=self.get_embed(), view=self)
         return button_callback
 
     def get_embed(self):
@@ -202,7 +202,7 @@ class QuizView(discord.ui.View):
         
         self.clear_items() 
         # We use message.edit here because we deferred at the start of the callback
-        await interaction.message.edit(embed=embed, view=self)
+        await interaction.edit_original_response(embed=embed, view=self)
 
 # ---------------- UI: PAGINATOR VIEW ----------------
 class TrainingPaginator(discord.ui.View):
@@ -356,7 +356,7 @@ class ModTraining(commands.Cog):
         # --- NEW: DM Notification ---
         dm_failed = False
         try:
-            welcome_embed = discord.Embed(title="Welcome to the Team", color=0xffffff)
+            welcome_embed = discord.Embed(title="🛡️ Welcome to the Team", color=0xffffff)
             welcome_embed.description = "Your official Moderation Profile has been created in the database.\n\nPlease head to the server and run the `/training` command to complete your mandatory onboarding."
             await user.send(embed=welcome_embed)
         except discord.Forbidden:
