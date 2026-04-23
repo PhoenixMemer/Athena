@@ -35,7 +35,7 @@ initial_extensions = [
     'cogs.vanity',
     'cogs.matchmakingv13',
     'cogs.mod_training',
-    'cogs.economy',
+    'cogs.economy',#a72424
     'cogs.cupid_blacklist'
 ]
 
