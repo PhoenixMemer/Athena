@@ -3,6 +3,7 @@ import sys
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
+# Mobile Sync Test - April 2026
 
 # Load environment variables
 load_dotenv()
