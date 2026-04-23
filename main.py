@@ -32,7 +32,8 @@ initial_extensions = [
     'cogs.fun',
     'cogs.reminders',
     'cogs.vanity',
-    'cogs.matchmaking_v5',
+    'cogs.matchmakingv13',
+    'cogs.mod_training',
     'cogs.cupid_blacklist'
 ]
 
@@ -54,7 +55,7 @@ async def sync(ctx):
     # This syncs them instantly
     await bot.tree.sync(guild=ctx.guild)
     
-    await ctx.send(f"✅ **INSTANT SYNC:** Commands updated for {ctx.guild.name}! \n*(If it still fails, then lwk kys)*")
+    await ctx.send(f"**INSTANT SYNC:** Commands updated for {ctx.guild.name}! \n*(If it still fails, then lwk kys)*")
 
 @bot.command(name='syncguild', help='Sync slash commands to current guild')
 @commands.is_owner()
@@ -63,9 +64,9 @@ async def syncguild(ctx):
     try:
         bot.tree.copy_global_to(guild=ctx.guild)
         synced = await bot.tree.sync(guild=ctx.guild)
-        await ctx.send(f"✅ Synced {len(synced)} commands to this guild.")
+        await ctx.send(f"Synced {len(synced)} commands to this guild.")
     except Exception as e:
-        await ctx.send(f"❌ Guild sync failed: {e}")
+        await ctx.send(f"Guild sync failed: {e}")
 
 # Global events
 @bot.event
@@ -87,7 +88,7 @@ async def on_ready():
         print(f"  - {command.name}")
     
     # Set custom status
-    activity = discord.Streaming(name="Listening to Charli XCX ✨", url="https://twitch.tv/twitch")
+    activity = discord.Streaming(name="Investing in Tel Aviv", url="https://twitch.tv/twitch")
     await bot.change_presence(activity=activity, status=discord.Status.online)
     print(f'Custom status set: {activity.type.name} {activity.name}')
 
@@ -148,6 +149,31 @@ async def help_command(ctx):
     • Exclusive perks!
     """
     embed.add_field(name="<:s_white2:1382052523166142486> Vanity System", value=vanity_info, inline=False)
+    
+    # Staff Commands
+    fun_commands = """
+    <:p_hearts:1378053399525982288> `createprofile` - Create your mod user profile
+    <:p_hearts:1378053399525982288> `deleteprofile` - Delete your mod user profile  
+    <:p_hearts:1378053399525982288> `training` - Begin your staff training modules
+    <:p_hearts:1378053399525982288> `strike` - Issue formal strike to staff
+    <:p_hearts:1378053399525982288> `modinfo` - View detailed moderator info
+    <:p_hearts:1378053399525982288> `loa` - Toggle your LOA status on/off
+    <:p_hearts:1378053399525982288> `setrank` - Update rank of staff
+    <:p_hearts:1378053399525982288> `reset_training` - Delete old training data for a mod
+    <:p_hearts:1378053399525982288> `faq`- Check out frequently answered questions by mods
+    <:p_hearts:1378053399525982288> `staffview` - View all current staff
+    <:p_hearts:1378053399525982288> `commend` - Commend a mod for excellent work
+    <:p_hearts:1378053399525982288> `staffview` - View all current staff
+    """
+    embed.add_field(name="<:s_white2:1382052523166142486> Staff Commands", value=fun_commands, inline=False)
+
+        # Cupid Commands
+    fun_commands = """
+    <:p_hearts:1378053399525982288> `analayze_match` - Analyse two user profiles
+    <:p_hearts:1378053399525982288> `add_synonym` - Add word(s) to Athena's matchmaking database  
+    <:p_hearts:1378053399525982288> `blacklist_add` - Prevent a user from accessing matchmaking channels
+    """
+    embed.add_field(name="<:s_white2:1382052523166142486> Cupid Commands", value=fun_commands, inline=False)
     
     # Set footer with timestamp
     embed.set_footer(text="Use command prefixes: a. or a!")

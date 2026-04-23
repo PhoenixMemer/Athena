@@ -91,8 +91,15 @@ class Vanity(commands.Cog):
             # But only if this is a real presence update (not just going offline)
             # OR if it's a manual force check
             if force_check or (is_presence_update and member.status != discord.Status.offline):
+                # cogs/vanity.py around line 95
                 try:
                     await member.remove_roles(vanity_role)
+                except discord.errors.DiscordServerError:
+                    # If Discord is having a mid-life crisis, we just skip this check and try again next loop
+                    logger.warning(f"⚠️ Discord 503 error: Could not remove role from {member.name}. Skipping...")
+                except Exception as e:
+                    logger.error(f"Error in vanity check: {e}")
+                    
                     self.vanity_tracking[member.id] = False
                     return False
                 except discord.Forbidden:

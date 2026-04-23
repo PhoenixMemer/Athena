@@ -1,0 +1,176 @@
+{
+  "categories": {
+    "video_games": [
+      "gaming",
+      "video games",
+      "games",
+      "genshin",
+      "gacha",
+      "pjsk",
+      "hollow knight",
+      "hoyo",
+      "hsr",
+      "minecraft",
+      "fnaf",
+      "valorant",
+      "fortnite",
+      "roblox",
+      "overwatch",
+      "league of legends",
+      "stardew valley",
+      "rpg",
+      "fps",
+      "delta force"
+    ],
+    "anime_manga": [
+      "anime",
+      "manga",
+      "jjk",
+      "kny",
+      "one piece",
+      "death note",
+      "manhwa",
+      "webtoon",
+      "studio ghibli",
+      "naruto",
+      "bleach",
+      "mha"
+    ],
+    "music": [
+      "music",
+      "citypop",
+      "indie",
+      "kpop",
+      "jpop",
+      "rap",
+      "r&b",
+      "hiphop",
+      "metal",
+      "rock",
+      "classical",
+      "playing instruments",
+      "guitar",
+      "piano"
+    ],
+    "reading_writing": [
+      "reading",
+      "books",
+      "fanfiction",
+      "ff",
+      "novels",
+      "writing",
+      "poetry",
+      "literature",
+      "ao3",
+      "wattpad"
+    ],
+    "arts_crafts": [
+      "art",
+      "drawing",
+      "digital art",
+      "graphic design",
+      "sketching",
+      "painting",
+      "crochet",
+      "knitting",
+      "sewing"
+    ],
+    "photography": [
+      "photography",
+      "pfp",
+      "matching pfps",
+      "taking pictures",
+      "cameras"
+    ],
+    "cooking_baking": [
+      "cooking",
+      "baking",
+      "brownies",
+      "cakes",
+      "culinary",
+      "foodie"
+    ],
+    "vehicles": [
+      "bike",
+      "bikes",
+      "car",
+      "cars",
+      "biker",
+      "motorcycles",
+      "jdm",
+      "f1"
+    ],
+    "movies_tv": [
+      "movies",
+      "films",
+      "the boys",
+      "dexter",
+      "lucifer",
+      "documentaries",
+      "sitcoms",
+      "kdrama",
+      "shows",
+      "netflix",
+      "cinema"
+    ],
+    "true_crime_paranormal": [
+      "true crime",
+      "creepypasta",
+      "analog horror",
+      "horror",
+      "mystery",
+      "supernatural",
+      "ghosts"
+    ],
+    "social_communication": [
+      "vc",
+      "voice chat",
+      "vcing",
+      "chatting",
+      "texting",
+      "yapping",
+      "calling",
+      "hanging out"
+    ],
+    "sports_active": [
+      "sports",
+      "gym",
+      "working out",
+      "badminton",
+      "volleyball",
+      "basketball",
+      "soccer",
+      "football",
+      "skating",
+      "swimming",
+      "hiking"
+    ],
+    "nature_ocean": [
+      "ocean",
+      "nature",
+      "animals",
+      "pets",
+      "sleeping",
+      "sleep"
+    ],
+    "fashion_beauty": [
+      "fashion",
+      "makeup",
+      "skincare",
+      "clothes",
+      "shopping",
+      "style",
+      "thrifting"
+    ],
+    "tech_programming": [
+      "coding",
+      "programming",
+      "tech",
+      "computers",
+      "linux",
+      "pc building",
+      "keyboards",
+      "software"
+    ]
+  }
+}

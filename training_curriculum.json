@@ -1,0 +1,296 @@
+{
+  "info_pages": [
+    {
+      "title": "Page 1: The Cherie Philosophy",
+      "content": "**Welcome to Moderation!**\nOur ultimate goal in cherriies is to keep the server easy-going, fair, and consistent. Moderation should never make members afraid to speak.\n\nIf people are laughing, engaging, and having fun, moderation stays out of it. We only step in when the community is actually being harmed, a user is targeted, or the chat is severely disrupted. You are here to protect the vibe, not police every single message."
+    },
+    {
+      "title": "age 2: The Escalation Ladder",
+      "content": "**How to Intervene:**\n\n• **Friendly Nudges:** Casual conversation nudges (\"wrong channel btw\", \"try to keep it a bit less spammy\"). These do not count as formal verbals. Do not issue warnings after a nudge.\n• **Verbal Warnings:** The first step of actual moderation. Use this ONLY when a clear rule is broken. (\"please stop insulting them, that counts as harassment\").\n• **Formal Action (Sapphire):** If the rule-breaking continues after a verbal, you move to `s.warn` or `s.mute`. Never \"ghost mute\"—always log a reason."
+    },
+    {
+      "title": "Page 3: What to Punish vs. What to Ignore",
+      "content": "**Action Required:**\nHarassment/targeting, slurs/hate speech, explicit sexual content, serious chat flooding/raids, and threats.\n\n**Stay Out of It:**\nEdgy jokes, dark humor, off-topic chatting, meme spam (within reason), sarcasm, and slightly offensive banter between friends.\n\n**Rule of Thumb:** Ask yourself, *\"Is someone actually being harmed or made uncomfortable?\"* If no, leave it alone."
+    },
+    {
+      "title": "Page 4: Technical & Raid Protocols",
+      "content": "**Identifying a Raid:**\n• 5+ members join within 40 seconds.\n• Members spamming the same/NSFW messages.\n• Bots flooding the chat.\n\n**Protocol: CODE BLACK**\n1. Announce ⚫ **CODE BLACK** in staff chat.\n2. Use `s.lockall` + `vt` to lock channels, pause invites, and mass ban.\n3. Pause invites & DMs for 4 hours via Server Settings -> Security Actions.\n4. Mass ban using `s.massban userid1 userid2`.\n5. Purge affected channels.\n\n*Once over, analyze audit logs. Save IDs if you cannot ping them.*"
+    },
+    {
+      "title": "Page 5: General Moderation & Conflict Resolution",
+      "content": "**The Internal Battle:**\nYou must distinguish between banter and harassment. Ad hominem attacks, slurs, filter bypassing, baiting, and flooding require action.\n\n**The Process:**\n1. **De-escalation:** Tag users, ask them to \"drop it\" or \"take it to DMs\" neutrally.\n2. **Verbal Warning:** \"@User, this is your verbal warning for [Rule]. Stop now or you will be muted.\"\n3. **Sapphire Action:**\n   • `s.warn`: Minor offenses/spam.\n   • `s.mute`: Arguments/toxicity (10m cool-down, 1h toxicity, 6h+ severe).\n   • `s.purge`: Remove toxic messages only.\n4. **Escalation:** If they attack you, mute them and ping a Head Mod. Do not argue."
+    },
+    {
+      "title": "Page 6: Hierarchy and Chain of Command",
+      "content": "**Reporting Issues:**\nGo to the Head Mod first. Do not jump to Head Admin/Owner unless it is a dire emergency.\n\n**Cross-Department:**\nIf a Cupid/Partnership Manager breaks rules, DO NOT start a staff war. Document proof and report to the Owners or Head Admins. Mute only if actively raiding/spamming.\n\n**Professionalism:**\nDo not air dirty laundry. Discuss disagreements in staff-chat/DMs. Sharing staff screenshots is against the Staff Protection Act.\n\n**LOA Rule:**\nNEVER ping a staff member on leave (red 'LOA' icon). This will result in punishment. If unsure, ASK."
+    },
+    {
+      "title": "Page 7: Ticket Handling",
+      "content": "A ticket is a formal record, not a casual DM. When you claim it, you own it.\n\n**Handling Steps:**\n1. **Claiming:** Claim immediately. Greet professionally. No brainrot/slang.\n2. **Evidence:** Ask for message links/screenshots. Do not act on hearsay.\n3. **Appeals:** Check `s.history`. If someone else punished them, ping that mod. Do not undo others' actions blindly.\n4. **Closing:** Ask \"Is there anything else?\" before closing. Ensure transcript saves.\n\n*If a user abuses you in a ticket: Warn once, mute, and close. Take the high road.*"
+    },
+    {
+      "title": "Page 8: 𝑆𝑡𝑎𝑓𝑓 𝑃𝑟𝑜𝑡𝑒𝑐𝑡𝑖𝑜𝑛 𝐴𝑐𝑡",
+      "content": ":1_~9: Internal staff communications are considered confidential. The unauthorized sharing of any messages, including screenshots, copies, or forwarded content from designated staff-only channels to public forums or non-staff members, is strictly prohibited. Violations of this policy will result in severe disciplinary action, up to and including immediate termination.\n\n:2_: In the event that a staff member feels targeted or unfairly treated by a superior, they are granted the full right to initiate a formal report using s.report. This process will trigger a confidential investigation to ensure a thorough and impartial review of the incident. All reports will be handled with the utmost discretion and a commitment to protecting the reporting party from retaliation.\n\n:3_: To support staff members who are also students, special extended leave will be granted during officially recognized examination periods, such as Cambridge International Examinations (CIEs) or Mid Year (MYE) exams. This provision is designed to accommodate academic commitments and promote a healthy work life balance for our members!\n\n:4_: Any personal attacks or targeted harassment directed at a staff member from external parties will be met with a unified and collective response from the entire staff. 𝑪𝒉𝒆́𝒓𝒊𝒆 is committed to standing in full solidarity with any affected individual and will take all necessary steps to defend their well being and reputation.\n\n:5_: All demotions and promotions will be conducted through a transparent and formal process. Decisions will be based on a comprehensive review of past performance, demonstrated capabilities, and successful completion of any required trial or probationary phases. If the Staff Lead and Owner(s) grant permission to promote a member quickly, they are permitted to do so for good reason. This ensures that all personnel changes are fair and well justified."
+    }
+  ],
+  "quiz_sets": [
+    [
+      {
+        "question": "What is the very first step of formal moderation when a clear rule is broken?",
+        "options": ["A) A friendly nudge", "B) A Formal Verbal Warning", "C) Using s.warn", "D) Ghost muting"],
+        "correct_answer": "B"
+      },
+      {
+        "question": "If 5 members join the server within 40 seconds, what must you assume?",
+        "options": ["A) The server is just popular today", "B) It is a preemptive raid and you should prepare for Code Black", "C) You should welcome all of them immediately", "D) You should ask them in DMs where they came from"],
+        "correct_answer": "B"
+      },
+      {
+        "question": "What is the rule regarding staff members with the red 'LOA' icon?",
+        "options": ["A) You can ping them for minor issues", "B) You should only ping them if the Head Admin is offline", "C) NEVER ping them; doing so results in punishment", "D) They are fired and can be ignored"],
+        "correct_answer": "C"
+      },
+      {
+        "question": "A member is using light, edgy humor that some might find 'cringe,' but no one has expressed discomfort. However, you personally find it annoying. What is the correct action?",
+        "options": ["A) Give a friendly nudge to stop.", "B) Issue a verbal warning for 'Disruptive Behavior.'", "C) Continue monitoring but do nothing; personal annoyance is not a reason to moderate if the vibe is fine.", "D) Mute them for 10 minutes to 'clean up' the chat."],
+        "correct_answer": "C"
+      },
+      {
+        "question": "Two close friends are having a 'roast battle.' It’s getting a bit personal, but they are both actively laughing. Suddenly, a third person pings you saying they are 'uncomfortable' watching it. What do you do?",
+        "options": ["A) Ban the two friends for harassment.", "B) Briefly intervene with a Friendly Nudge: 'Let's keep the roasts a bit lighter for the general chat, guys.'", "C) Ignore the third person because the friends are fine.", "D) Immediately issue verbal warnings to all three."],
+        "correct_answer": "B"
+      },
+      {
+        "question": "A user is 'baiting'—they are technically following every rule but are clearly trying to make you lose your temper as a Mod. How do you handle this?",
+        "options": ["A) Lose your cool and show them who's boss.", "B) Stay neutral, issue a verbal for 'Disruptive Behavior,' and if it persists, mute and escalate to the Mod Leader.", "C) Ghost mute them without a reason.", "D) Block the user so you don't see their messages."],
+        "correct_answer": "B"
+      },
+      {
+        "question": "You notice a staff member (same rank as you) making a mistake in a public channel. How do you handle it?",
+        "options": ["A) Correct them immediately in the public channel so the members see the right way.", "B) DM them privately or discuss it in #staff-chat to maintain a professional front.", "C) Report them to the Owner instantly.", "D) Undo their action without telling them."],
+        "correct_answer": "B"
+      },
+      {
+        "question": "A raid starts. You run s.lockall . +vt but Sapphire is unresponsive. What is your immediate backup?",
+        "options": ["A) Wait for Sapphire to come back online.", "B) Use Carl-bot or manually pause invites and DM messages for 4 hours via Security Actions.", "C) Start banning everyone manually.", "D) Close the Discord app and wait for it to blow over."],
+        "correct_answer": "B"
+      },
+      {
+        "question": "You catch a raider sending NSFW content. After you lock the channel and ban the user, what is the critical 'cleaning' step?",
+        "options": ["A) Purge all channels where the raid messages were sent using s.purge.", "B) Ping @everyone to apologize.", "C) Change the server icon.", "D) Disable all bots."],
+        "correct_answer": "A"
+      },
+      {
+        "question": "You suspect a user is a 'Token Raider' (scripted alt) but they haven't typed yet. They passed the basic join gate. What do you check?",
+        "options": ["A) Their profile picture.", "B) Their User ID and account age in the audit logs.", "C) Ask them a math question in DMs.", "D) Give them a 'Verified' role manually."],
+        "correct_answer": "B"
+      },
+      {
+        "question": "An Admin tells you to enable 'Raid Mode' manually. Which command do you use?",
+        "options": ["A) s.raid-on", "B) /lockdown", "C) /raid-mode (Admin only).", "D) s.massban"],
+        "correct_answer": "C"
+      },
+      {
+        "question": "You are handling a ticket where a user is being incredibly 'brainrot' and using heavy slang that makes no sense. What is your tone?",
+        "options": ["A) Use the same slang back to be 'relatable.'", "B) Maintain a professional 'Customer Service' tone and avoid slang/brainrot language.", "C) Close the ticket for being 'annoying.'", "D) Tell them to talk normally."],
+        "correct_answer": "B"
+      },
+      {
+        "question": "A user sends a screenshot of #staff-chat in a public channel as a 'joke.' What rule does this violate?",
+        "options": ["A) The Mimu Coin Act.", "B) The Staff Protection Act.", "C) General Spam.", "D) No violation if it was a joke."],
+        "correct_answer": "B"
+      }
+    ],
+    [
+      {
+        "question": "What is the primary rule of thumb for deciding to punish someone?",
+        "options": ["A) Does this break Discord TOS?", "B) Is someone actually being harmed or made uncomfortable?", "C) Do I personally dislike this user?", "D) Did they use a swear word?"],
+        "correct_answer": "B"
+      },
+      {
+        "question": "How long should you pause invites and DMs during a CODE BLACK raid?",
+        "options": ["A) 10 minutes", "B) 1 hour", "C) 4 hours", "D) 24 hours"],
+        "correct_answer": "C"
+      },
+      {
+        "question": "What happens if a user becomes verbally abusive to you inside a support ticket?",
+        "options": ["A) Insult them back to defend yourself", "B) Warn them once, and if they continue, mute them and close the ticket", "C) Keep the ticket open forever", "D) Immediately ban them without warning"],
+        "correct_answer": "B"
+      },
+      {
+        "question": "A member is using light, edgy humor that some might find 'cringe,' but no one has expressed discomfort. However, you personally find it annoying. What is the correct action?",
+        "options": ["A) Give a friendly nudge to stop.", "B) Issue a verbal warning for 'Disruptive Behavior.'", "C) Continue monitoring but do nothing; personal annoyance is not a reason to moderate if the vibe is fine.", "D) Mute them for 10 minutes to 'clean up' the chat."],
+        "correct_answer": "C"
+      },
+      {
+        "question": "Two close friends are having a 'roast battle.' It’s getting a bit personal, but they are both actively laughing. Suddenly, a third person pings you saying they are 'uncomfortable' watching it. What do you do?",
+        "options": ["A) Ban the two friends for harassment.", "B) Briefly intervene with a Friendly Nudge: 'Let's keep the roasts a bit lighter for the general chat, guys.'", "C) Ignore the third person because the friends are fine.", "D) Immediately issue verbal warnings to all three."],
+        "correct_answer": "B"
+      },
+      {
+        "question": "You notice a staff member (same rank as you) making a mistake in a public channel. How do you handle it?",
+        "options": ["A) Correct them immediately in the public channel so the members see the right way.", "B) DM them privately or discuss it in #staff-chat to maintain a professional front.", "C) Report them to the Owner instantly.", "D) Undo their action without telling them."],
+        "correct_answer": "B"
+      },
+      {
+        "question": "A raid starts. You run s.lockall . +vt but Sapphire is unresponsive. What is your immediate backup?",
+        "options": ["A) Wait for Sapphire to come back online.", "B) Use Carl-bot or manually pause invites and DM messages for 4 hours via Security Actions.", "C) Start banning everyone manually.", "D) Close the Discord app and wait for it to blow over."],
+        "correct_answer": "B"
+      },
+      {
+        "question": "You suspect a user is a 'Token Raider' (scripted alt) but they haven't typed yet. They passed the basic join gate. What do you check?",
+        "options": ["A) Their profile picture.", "B) Their User ID and account age in the audit logs.", "C) Ask them a math question in DMs.", "D) Give them a 'Verified' role manually."],
+        "correct_answer": "B"
+      },
+      {
+        "question": "An Admin tells you to enable 'Raid Mode' manually. Which command do you use?",
+        "options": ["A) s.raid-on", "B) /lockdown", "C) /raid-mode (Admin only).", "D) s.massban"],
+        "correct_answer": "C"
+      },
+      {
+        "question": "You need a quick answer on a protocol but the Mod Leader is offline. A Head Admin is online but has the bubbly red 'LOA' icon. What do you do?",
+        "options": ["A) Ping the Head Admin anyway; it's just one question.", "B) Do NOT ping them. Check the FAQ or ask another available Mod.", "C) DM the Owner.", "D) Make up your own rule."],
+        "correct_answer": "B"
+      },
+      {
+        "question": "A user is appealing a ban issued by a staff member who is currently on LOA. What is the protocol?",
+        "options": ["A) Unban the user immediately since the staff member is away.", "B) Wait until the staff member returns or ask a Head Admin to review the case.", "C) Tell the user to wait 2 weeks.", "D) Delete the appeal ticket."],
+        "correct_answer": "B"
+      },
+      {
+        "question": "You are in a ticket and the user claims 'Phoenix said I could do this,' but has no proof. Who do you check with?",
+        "options": ["A) The user's friend.", "B) Ari, Phoenix, or Kyxrt directly (report up the chain).", "C) The Mod Leader.", "D) Assume the user is telling the truth."],
+        "correct_answer": "B"
+      },
+      {
+        "question": "A user sends a screenshot of #staff-chat in a public channel as a 'joke.' What rule does this violate?",
+        "options": ["A) The Mimu Coin Act.", "B) The Staff Protection Act.", "C) General Spam.", "D) No violation if it was a joke."],
+        "correct_answer": "B"
+      }
+    ],
+    [
+      {
+        "question": "Which of the following is considered a 'Friendly Nudge'?",
+        "options": ["A) 'wrong channel btw'", "B) '@User this is your verbal warning'", "C) Using s.warn", "D) Muting for 10 minutes"],
+        "correct_answer": "A"
+      },
+      {
+        "question": "When claiming a ticket, what kind of language should you avoid?",
+        "options": ["A) Professional greetings", "B) Polite questions", "C) Slang or 'brainrot' language", "D) Asking for screenshots"],
+        "correct_answer": "C"
+      },
+      {
+        "question": "What is the first step of de-escalating a chat argument before giving a verbal warning?",
+        "options": ["A) s.mute everyone", "B) Tag the users and ask them to drop the topic or take it to DMs neutrally", "C) Threaten to ban them instantly", "D) Start talking about a completely different topic"],
+        "correct_answer": "B"
+      },
+      {
+        "question": "A member is using light, edgy humor that some might find 'cringe,' but no one has expressed discomfort. However, you personally find it annoying. What is the correct action?",
+        "options": ["A) Give a friendly nudge to stop.", "B) Issue a verbal warning for 'Disruptive Behavior.'", "C) Continue monitoring but do nothing; personal annoyance is not a reason to moderate if the vibe is fine.", "D) Mute them for 10 minutes to 'clean up' the chat."],
+        "correct_answer": "C"
+      },
+      {
+        "question": "Two close friends are having a 'roast battle.' It’s getting a bit personal, but they are both actively laughing. Suddenly, a third person pings you saying they are 'uncomfortable' watching it. What do you do?",
+        "options": ["A) Ban the two friends for harassment.", "B) Briefly intervene with a Friendly Nudge: 'Let's keep the roasts a bit lighter for the general chat, guys.'", "C) Ignore the third person because the friends are fine.", "D) Immediately issue verbal warnings to all three."],
+        "correct_answer": "B"
+      },
+      {
+        "question": "A user is 'baiting'—they are technically following every rule but are clearly trying to make you lose your temper as a Mod. How do you handle this?",
+        "options": ["A) Lose your cool and show them who's boss.", "B) Stay neutral, issue a verbal for 'Disruptive Behavior,' and if it persists, mute and escalate to the Mod Leader.", "C) Ghost mute them without a reason.", "D) Block the user so you don't see their messages."],
+        "correct_answer": "B"
+      },
+      {
+        "question": "You catch a raider sending NSFW content. After you lock the channel and ban the user, what is the critical 'cleaning' step?",
+        "options": ["A) Purge all channels where the raid messages were sent using s.purge.", "B) Ping @everyone to apologize.", "C) Change the server icon.", "D) Disable all bots."],
+        "correct_answer": "A"
+      },
+      {
+        "question": "An Admin tells you to enable 'Raid Mode' manually. Which command do you use?",
+        "options": ["A) s.raid-on", "B) /lockdown", "C) /raid-mode (Admin only).", "D) s.massban"],
+        "correct_answer": "C"
+      },
+      {
+        "question": "You are handling a ticket where a user is being incredibly 'brainrot' and using heavy slang that makes no sense. What is your tone?",
+        "options": ["A) Use the same slang back to be 'relatable.'", "B) Maintain a professional 'Customer Service' tone and avoid slang/brainrot language.", "C) Close the ticket for being 'annoying.'", "D) Tell them to talk normally."],
+        "correct_answer": "B"
+      },
+      {
+        "question": "You need a quick answer on a protocol but the Mod Leader is offline. A Head Admin is online but has the bubbly red 'LOA' icon. What do you do?",
+        "options": ["A) Ping the Head Admin anyway; it's just one question.", "B) Do NOT ping them. Check the FAQ or ask another available Mod.", "C) DM the Owner.", "D) Make up your own rule."],
+        "correct_answer": "B"
+      },
+      {
+        "question": "A user is appealing a ban issued by a staff member who is currently on LOA. What is the protocol?",
+        "options": ["A) Unban the user immediately since the staff member is away.", "B) Wait until the staff member returns or ask a Head Admin to review the case.", "C) Tell the user to wait 2 weeks.", "D) Delete the appeal ticket."],
+        "correct_answer": "B"
+      },
+      {
+        "question": "You are in a ticket and the user claims 'Phoenix said I could do this,' but has no proof. Who do you check with?",
+        "options": ["A) The user's friend.", "B) Ari, Phoenix, or Kyxrt directly (report up the chain).", "C) The Mod Leader.", "D) Assume the user is telling the truth."],
+        "correct_answer": "B"
+      },
+      {
+        "question": "A user sends a screenshot of #staff-chat in a public channel as a 'joke.' What rule does this violate?",
+        "options": ["A) The Mimu Coin Act.", "B) The Staff Protection Act.", "C) General Spam.", "D) No violation if it was a joke."],
+        "correct_answer": "B"
+      }
+    ]
+  ],
+  "faqs": [
+    {
+      "category": "General Behavior & Vibe",
+      "question": "What if I’m in a heated argument with a member but they haven't technically broken a rule yet?",
+      "answer": "According to the **Escalation Ladder**, you should first attempt to de-escalate by tagging the users and asking them to \"drop the topic\" or \"take it to DMs\" using a neutral tone. If you feel yourself losing your cool, ping the **Mod Leader** or another staff member to take over; never \"crash out\" in public channels."
+    },
+    {
+      "category": "General Behavior & Vibe",
+      "question": "Can I participate in 'edgy' jokes if the chat is laughing?",
+      "answer": "Yes. The owner's guidelines state that if people are laughing and engaging, moderation should stay out of it. However, as a staff member, you set the tone; ensure your participation doesn't cross into **Harassment** or **Targeting** someone."
+    },
+    {
+      "category": "General Behavior & Vibe",
+      "question": "A member is being annoying but isn't breaking rules. Can I warn them?",
+      "answer": "No. Warnings should only be used for clear issues that actually harm the community. If they are disrupting the flow, use a **Friendly Nudge** first."
+    },
+    {
+      "category": "Conflict & Hierarchy",
+      "question": "What do I do if I see an Admin or Head Admin abusing their power?",
+      "answer": "You should document the proof (screenshots/links) and report it to **Ari, Phoenix, or Kyxrt**. Never argue with a senior staff member in public channels, as this creates a chaotic environment."
+    },
+    {
+      "category": "Conflict & Hierarchy",
+      "question": "A Cupid is being toxic in #general. Can I ban them?",
+      "answer": "You may mute them if they are actively disrupting the server, but you must report the behavior to the **Second Admin** (who manages Cupids). Do not start a staff war; follow the chain of command."
+    },
+    {
+      "category": "Conflict & Hierarchy",
+      "question": "I disagree with another Mod's decision to mute someone. Should I unmute them?",
+      "answer": "Never undo another staff member's punishment without their consent. Discuss the disagreement privately in **#staff-chat** or DMs to maintain a professional front."
+    },
+    {
+      "category": "Technical & Security",
+      "question": "I see someone who looks like a raider but hasn't typed yet. Should I ban?",
+      "answer": "If you notice a preemptive raid pattern (5+ members joining in 40 seconds), announce **⚫ CODE BLACK** and monitor them closely. Once the \"weird stuff\" or spam begins, proceed with mass banning and channel locks."
+    },
+    {
+      "category": "Technical & Security",
+      "question": "I accidentally 'Ghost Muted' someone because I was in a rush. What do I do?",
+      "answer": "Use Sapphire's **edit reason** feature (`?reason [caseID] [New Reason]`) immediately to log the justification. Head staff review these logs to ensure the **Staff Protection Act** is followed and power isn't being abused."
+    },
+    {
+      "category": "Technical & Security",
+      "question": "Can I ping a staff member on LOA if it’s a 'quick question'?",
+      "answer": "Absolutely not. Bothering staff on leave—indicated by the bubbly red **LOA icon**—is a punishable offense."
+    },
+    {
+      "category": "Tickets & Appeals",
+      "question": "A user is appealing a ban from 3 months ago. Do I handle it?",
+      "answer": "Check their **Sapphire history** (`s.history`) or cases first. If you were not the one who issued the punishment, you must ping the original staff member to get their consent before making a decision."
+    },
+    {
+      "category": "Tickets & Appeals",
+      "question": "What if a user refuses to provide 'Message Links' as evidence in a ticket?",
+      "answer": "Inform them politely that we cannot act on hearsay. State: \"Please provide proof of the incident (Message Links or Screenshots) so we can investigate.\" If they cannot provide proof, you may close the ticket once the query is resolved."
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 # cogs/matchmaking_v5.py
-# Athena Hybrid Engine v19.0 — The "Intent" Hardcode
-# Fixes: The "Do you mind? Yes" double-negative trap. Python now forces the interpretation.
+# Athena Hybrid Engine v21.0 — Production Grade (Network Armor + Logic)
+# Fixes: 503 Discord Service Unavailable, Double Negatives, Crash Loops
 
 import discord
 from discord import app_commands
@@ -21,6 +21,26 @@ logger.setLevel(logging.INFO)
 
 # ---------------- CONFIG ----------------
 SYNONYMS_FILE = "synonyms.json"
+
+# ---------------- NETWORK UTILS ----------------
+async def safe_defer(interaction: discord.Interaction, retries=3):
+    """
+    Tries to defer the interaction. If Discord 503s (Gateway Overflow),
+    it waits and retries. This fixes the 'reset reason: overflow' crash.
+    """
+    for i in range(retries):
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.defer()
+            return True
+        except discord.errors.DiscordServerError:
+            # 503 or 502 error from Discord. Wait and retry.
+            await asyncio.sleep(1)
+            continue
+        except Exception as e:
+            logger.error(f"Defer failed: {e}")
+            return False
+    return False
 
 # ---------------- CLEANING & PARSING ----------------
 NOISE_WORDS = {
@@ -53,8 +73,43 @@ def split_interest_text(raw: str) -> List[str]:
             tokens.append(cleaned)
     return tokens
 
+def normalize_text_for_logic(text: str) -> str:
+    """Removes aesthetic symbols to make logic parsing 100% accurate."""
+    clean = re.sub(r'[^\x00-\x7F]+', '', text)
+    return clean.lower()
+
+def parse_dealbreakers(raw_text: str) -> Dict[str, str]:
+    """
+    Determines relationship style and trans status/preference.
+    Returns: 'monogamous', 'polyamorous', 'open_trans', 'closed_trans'
+    """
+    clean_text = normalize_text_for_logic(raw_text)
+    lines = clean_text.split('\n')
+    
+    # Defaults
+    poly_status = "unknown"  
+    trans_pref = "open"
+    is_trans_self = False
+
+    for line in lines:
+        if "mind" in line and "poly" in line:
+            if "yes" in line: poly_status = "monogamous"
+            elif "no" in line: poly_status = "polyamorous"
+        
+        if "mind" in line and "trans" in line:
+            if "yes" in line: trans_pref = "closed"
+            elif "no" in line: trans_pref = "open"
+            
+        if "gender" in line and ("trans" in line or "mtf" in line or "ftm" in line):
+            is_trans_self = True
+
+    return {
+        "poly": poly_status,
+        "trans_pref": trans_pref,
+        "is_trans": is_trans_self
+    }
+
 def parse_section_bounds(full_text: str) -> Tuple[str, str, str]:
-    """Splits profile into Self, Them, and Other."""
     them_match = re.search(r"(?i)(?:^|\n)\s*[^\w\n]*\s*(?:them|𝓣𝒉𝒆𝒎|𝓽𝓱𝓮𝓶)\b", full_text)
     other_match = re.search(r"(?i)(?:^|\n)\s*[^\w\n]*\s*(?:other|𝓞𝒕𝒉𝒆𝒓|𝓸𝓽𝓱𝓮𝓻)\b", full_text)
     
@@ -71,32 +126,6 @@ def parse_section_bounds(full_text: str) -> Tuple[str, str, str]:
         other_text = full_text[start_other:]
         
     return p1_text.strip(), p2_text.strip(), other_text.strip()
-
-def get_intent_flags(raw_text: str) -> str:
-    """
-    Parses "Do you mind?" questions using simple keyword logic.
-    Returns a string of flags for the AI.
-    """
-    flags = []
-    lines = raw_text.lower().split('\n')
-    
-    poly_status = "Unknown"
-    trans_status = "Unknown"
-    
-    for line in lines:
-        # Check Poly
-        if "mind" in line and "poly" in line:
-            clean = re.sub(r'[^\w\s]', '', line).split()
-            if "yes" in clean or "yeah" in clean: poly_status = "MONOGAMOUS (Minds Poly)"
-            elif "no" in clean or "nope" in clean: poly_status = "POLY-OPEN (Doesn't Mind)"
-        
-        # Check Trans
-        if "mind" in line and "trans" in line:
-            clean = re.sub(r'[^\w\s]', '', line).split()
-            if "yes" in clean or "yeah" in clean: trans_status = "NO-TRANS (Preferences Cis)"
-            elif "no" in clean or "nope" in clean: trans_status = "TRANS-FRIENDLY (Doesn't Mind)"
-
-    return f"Relationship Style: {poly_status} | Trans Preference: {trans_status}"
 
 # ---------------- DATA ----------------
 INTEREST_SYNONYMS = {
@@ -194,12 +223,15 @@ def parse_profile_block(block: str) -> Dict:
         'name': None, 'age': None, 'age_pref': None, 
         'gender': None, 'sexuality': None, 'tz_offset': None,
         'dislikes': [], 'likes': [], 'hobbies': [], 'traits': [],
-        'raw_text': block 
+        'raw_text': block,
+        'flags': {} 
     }
     
+    # 1. Standardize Text
     text = block.replace('╰', '\n').replace('꒰', ' ').replace('୧', ' ').replace('𐔌', '\n')
     text = re.sub(r'[^\x00-\x7F]+', ' ', text)
     
+    # 2. Extract Fields
     def extract_line(key_pattern):
         m = re.search(rf'(?i)^\s*{key_pattern}\s*[:\-]?\s*(.+)', text, re.MULTILINE)
         return m.group(1).strip() if m else None
@@ -230,14 +262,15 @@ def parse_profile_block(block: str) -> Dict:
                 else:
                     if t: final.append(t)
             profile[field] = list(dict.fromkeys(final))
+            
+    # 3. Extract Flags (Poly/Trans)
+    profile['flags'] = parse_dealbreakers(block)
     return profile
 
-# ---------------- MATCHING LOGIC (MATH) ----------------
-def check_logistics(p1: Dict, p2: Dict) -> Tuple[float, List[str]]:
-    """Strict math checks for Gender and Timezone."""
+# ---------------- LOGIC MATRIX (The "Judge") ----------------
+def check_compatibility_logic(p1: Dict, p2: Dict) -> Tuple[float, List[str], bool]:
     issues = []
     
-    # 1. Gender/Orientation
     g1 = normalize_gender(p1['gender']); s1 = p1['sexuality']
     g2 = normalize_gender(p2['gender']); s2 = p2['sexuality']
     
@@ -245,22 +278,36 @@ def check_logistics(p1: Dict, p2: Dict) -> Tuple[float, List[str]]:
         is_straight_1 = 'straight' in s1 or 'hetero' in s1
         is_straight_2 = 'straight' in s2 or 'hetero' in s2
         
-        # Bromance Check
         if is_straight_1 and is_straight_2 and g1 == g2:
-            return 0.0, [f"Incompatible Orientation (Two straight {g1}s)"]
-        if is_straight_1 and g1 == g2: return 0.0, ["Incompatible Orientation"]
-        if is_straight_2 and g1 == g2: return 0.0, ["Incompatible Orientation"]
+            return 0.0, [f"Incompatible Orientation (Two straight {g1}s)"], True
+        if is_straight_1 and g1 == g2: return 0.0, ["Incompatible Orientation"], True
+        if is_straight_2 and g1 == g2: return 0.0, ["Incompatible Orientation"], True
 
-    # 2. Timezone
+    # POLYAMORY CHECK
+    poly1 = p1['flags']['poly']
+    poly2 = p2['flags']['poly']
+    
+    if poly1 == 'monogamous' and poly2 == 'polyamorous':
+        return 0.0, ["Relationship Style Mismatch (Mono vs Poly)"], True
+    if poly2 == 'monogamous' and poly1 == 'polyamorous':
+        return 0.0, ["Relationship Style Mismatch (Poly vs Mono)"], True
+    
+    # TRANS CHECK
+    if p1['flags']['is_trans'] and p2['flags']['trans_pref'] == 'closed':
+        return 0.0, ["Preference Mismatch"], True
+    if p2['flags']['is_trans'] and p1['flags']['trans_pref'] == 'closed':
+        return 0.0, ["Preference Mismatch"], True
+
+    # TIMEZONE
     tz1 = p1['tz_offset']; tz2 = p2['tz_offset']
     if tz1 is not None and tz2 is not None:
         diff = abs(tz1 - tz2)
         if diff > 12: diff = 24 - diff
         if diff > 5.5:
             issues.append(f"Timezone Gap: {diff}h (Max 5.5h)")
-            return 0.3, issues
+            return 0.3, issues, False
 
-    return 1.0, issues
+    return 1.0, issues, False
 
 def fuzzy_match_score(a: str, b: str) -> float:
     clean_a = a.replace("custom::", "").strip()
@@ -288,75 +335,35 @@ def compute_interest_score(list_a: List[str], list_b: List[str]) -> Tuple[float,
     denom = max(len(list_a), 1)
     return min(1.0, score_sum / denom), matches
 
-# ---------------- AI JUDGE (INTENT INJECTOR) ----------------
-async def ask_athena_ai(p1: Dict, p2: Dict) -> Dict:
+# ---------------- AI SUMMARY ----------------
+async def get_athena_summary(p1: Dict, p2: Dict, score: int, frictions: List[str]) -> str:
     api_key = os.getenv("AI_API_KEY")
-    if not api_key: return {"score": 50, "summary": "AI Key Missing", "friction_points": []}
+    if not api_key: return "Athena AI Unavailable."
 
-    p1_self, p1_them, p1_other = parse_section_bounds(p1['raw_text'])
-    p2_self, p2_them, p2_other = parse_section_bounds(p2['raw_text'])
+    p1_self, p1_them, _ = parse_section_bounds(p1['raw_text'])
+    p2_self, p2_them, _ = parse_section_bounds(p2['raw_text'])
 
-    # PYTHON-SIDE INTENT ANALYSIS
-    p1_flags = get_intent_flags(p1['raw_text'])
-    p2_flags = get_intent_flags(p2['raw_text'])
-
-    CANDIDATE_MODELS = ["gemini-2.5-flash-lite", "gemini-2.0-flash", "gemini-1.5-pro"]
-    safety = [types.SafetySetting(category="HARM_CATEGORY_HARASSMENT", threshold="BLOCK_NONE")]
     client = genai.Client(api_key=api_key)
     
     prompt = f"""
-    You are Athena. Analyze compatibility.
+    Write a SHORT summary for this couple.
     
-    USER 1:
-    [DETECTED INTENT] {p1_flags}
-    [Self] {p1_self}
-    [Wants] {p1_them}
+    CONTEXT:
+    - Compatibility Score: {score}%
+    - Frictions: {', '.join(frictions) if frictions else 'None'}
     
-    USER 2:
-    [DETECTED INTENT] {p2_flags}
-    [Self] {p2_self}
-    [Wants] {p2_them}
+    User 1: {p1_self[:1000]}
+    User 2: {p2_self[:1000]}
     
-    RULES:
-    1. **Trust the [DETECTED INTENT] tags.**
-       - If both say "MONOGAMOUS", they are COMPATIBLE. Do not invent a conflict.
-       - If one says "MONOGAMOUS" and the other "POLY-OPEN", that IS a friction point.
-    2. Ignore "Wants" gender, focus on [Self] gender match.
-    3. Output ONE JSON object only.
-    
-    OUTPUT SCHEMA:
-    {{
-        "score": integer (0-100),
-        "summary": "1 sentence verdict.",
-        "dealbreaker": boolean,
-        "friction_points": ["List", "of", "issues"]
-    }}
+    TASK:
+    Write 2-3 sentences. Concise.
     """
 
-    loop = asyncio.get_running_loop()
-    
-    for model in CANDIDATE_MODELS:
-        try:
-            res = await loop.run_in_executor(None, lambda: client.models.generate_content(
-                model=model, contents=prompt, 
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    safety_settings=safety
-                )
-            ))
-            
-            if not res.text: continue
-            text = res.text.strip().replace("```json", "").replace("```", "")
-            data = json.loads(text)
-            
-            if isinstance(data, list): return data[0] if data else {"score": 50}
-            return data
-
-        except Exception as e:
-            logger.warning(f"AI Model {model} failed: {e}")
-            continue
-
-    return {"score": 50, "summary": "AI unavailable.", "friction_points": []}
+    try:
+        res = await asyncio.to_thread(client.models.generate_content, model="gemini-2.0-flash", contents=prompt)
+        return res.text[:950] if res.text else "Analysis complete."
+    except:
+        return "Athena is offline, but the math is solid."
 
 # ---------------- COG ----------------
 class FeedbackView(discord.ui.View):
@@ -371,66 +378,77 @@ class Matchmaking(commands.Cog):
 
     @app_commands.command(name="analyze_compatibility")
     async def analyze_compatibility(self, interaction: discord.Interaction, form1: str, form2: str, engine: str = "f22"):
-        await interaction.response.defer()
-        SYNMAN.reload_if_needed()
-        p1 = parse_profile_block(form1); p2 = parse_profile_block(form2)
+        # 1. NETWORK SAFE DEFER (Fixes 503 Crashes)
+        success = await safe_defer(interaction)
+        if not success:
+            # If we couldn't defer after 3 retries, abort silently or log
+            logger.error("Failed to defer interaction due to Network/Discord API Error.")
+            return
 
-        # 1. HOBBY MATH
-        i1 = p1['likes'] + p1['hobbies']; i2 = p2['likes'] + p2['hobbies']
-        s1, m1 = compute_interest_score(i1, i2); s2, m2 = compute_interest_score(i2, i1)
-        math_interest = max(s1, s2) * 0.7 + min(s1, s2) * 0.3
-        
-        # 2. LOGISTICS MATH
-        logistics_mult, logistics_issues = check_logistics(p1, p2)
-        
-        # 3. AI JUDGE
-        ai_data = await ask_athena_ai(p1, p2)
-        ai_score = ai_data.get('score', 50)
-        
-        # 4. FINAL CALCULATION
-        if logistics_mult == 0.0 or ai_data.get('dealbreaker'):
-            final_score = 0
-            title = "<:s_white2:1382052523166142486> 𝐴𝑡ℎ𝑒𝑛𝑎 𝑀𝑎𝑡𝑐ℎ𝑚𝑎𝑘𝑖𝑛𝑔 <:s_white2:1382052523166142486>"
-            desc_prefix = "💀 **Incompatible**"
-            color = 0xff0000
-        else:
-            base_score = (math_interest * 40) + (ai_score * 0.4) + (20 * logistics_mult)
-            if logistics_mult < 0.5: base_score = min(base_score, 45)
-            final_score = int(base_score)
+        try:
+            SYNMAN.reload_if_needed()
+            p1 = parse_profile_block(form1); p2 = parse_profile_block(form2)
+
+            # 2. HOBBY MATH
+            i1 = p1['likes'] + p1['hobbies']; i2 = p2['likes'] + p2['hobbies']
+            s1, m1 = compute_interest_score(i1, i2); s2, m2 = compute_interest_score(i2, i1)
+            math_interest = max(s1, s2) * 0.7 + min(s1, s2) * 0.3
             
-            title = "<:s_white2:1382052523166142486> 𝐴𝑡ℎ𝑒𝑛𝑎 𝑀𝑎𝑡𝑐ℎ𝑚𝑎𝑘𝑖𝑛𝑔 <:s_white2:1382052523166142486>"
-            if final_score > 80: desc_prefix = "➤ **Excellent Match**"
-            elif final_score > 60: desc_prefix = "➤ **Good Potential**"
-            elif final_score > 40: desc_prefix = "➤ **Weak Match**"
-            else: desc_prefix = "➤ **Low Compatibility**"
-            color = 0xffffff
-
-        desc = f"{desc_prefix}\n{ai_data.get('summary', 'Analysis Complete')[:1000]}"
-        
-        embed = discord.Embed(title=title, description=desc, color=color)
-        embed.add_field(name="<:p_hearts:1378053399525982288> Hybrid Score", value=f"**{final_score}%**", inline=False)
-        embed.add_field(name="<:p_hearts:1378053399525982288> Engine Breakdown", value=f"• **Algorithm**: {int(math_interest*100)}%\n• **AI Vibe Check**: {ai_score}%", inline=False)
-        
-        shared_list = []
-        combined = m1 + m2; combined.sort(key=lambda x: x[2], reverse=True)
-        seen = set()
-        for a, b, s in combined:
-            if not a or not b: continue
-            pair = tuple(sorted((a, b)))
-            if pair in seen: continue
-            seen.add(pair)
-            ca = str(a).replace("custom::","").title(); cb = str(b).replace("custom::","").title()
-            if ca == cb: shared_list.append(f"• **{ca}**")
-            elif s > 0.85: shared_list.append(f"• **{ca}** (Match)")
-            else: shared_list.append(f"• {ca} ↔ {cb}")
-        embed.add_field(name="<:p_hearts:1378053399525982288> Shared Interests", value="\n".join(shared_list[:6]) or "None detected", inline=False)
-        
-        all_frictions = (logistics_issues + ai_data.get('friction_points', []))[:5]
-        if all_frictions:
-            embed.add_field(name="⚠️ Friction Points", value="\n".join(all_frictions), inline=False)
+            # 3. LOGIC MATRIX
+            logistics_mult, logistics_issues, is_fatal = check_compatibility_logic(p1, p2)
             
-        embed.add_field(name="𝐴𝑡ℎ𝑒𝑛𝑎'𝑠 𝐴𝐼 𝑂𝑝𝑖𝑛𝑖𝑜𝑛", value=f"*{ai_data.get('summary')}*", inline=False)
+            # 4. FINAL SCORE
+            if is_fatal:
+                final_score = 0
+                title = "<:s_white2:1382052523166142486> 𝐴𝑡ℎ𝑒𝑛𝑎 𝑀𝑎𝑡𝑐ℎ𝑚𝑎𝑘𝑖𝑛𝑔 <:s_white2:1382052523166142486>"
+                desc_prefix = "💀 **Incompatible**"
+                color = 0xff0000
+            else:
+                base_score = (math_interest * 60) + (40 * logistics_mult)
+                if logistics_mult < 0.5: base_score = min(base_score, 45)
+                final_score = int(base_score)
+                
+                title = "<:s_white2:1382052523166142486> 𝐴𝑡ℎ𝑒𝑛𝑎 𝑀𝑎𝑡𝑐ℎ𝑚𝑎𝑘𝑖𝑛𝑔 <:s_white2:1382052523166142486>"
+                if final_score > 80: desc_prefix = "➤ **Excellent Match**"; color = 0xffffff
+                elif final_score > 60: desc_prefix = "➤ **Good Potential**"; color = 0xffffff
+                elif final_score > 40: desc_prefix = "➤ **Weak Match**"; color = 0xffffff
+                else: desc_prefix = "➤ **Low Compatibility**"; color = 0xffffff
 
-        await interaction.followup.send(embed=embed, view=FeedbackView(str(int(time.time()))))
+            # 5. AI SUMMARY
+            ai_summary = await get_athena_summary(p1, p2, final_score, logistics_issues)
+            
+            desc = f"{desc_prefix}\n{ai_summary}"
+            
+            embed = discord.Embed(title=title, description=desc, color=color)
+            embed.add_field(name="<:p_hearts:1378053399525982288> Hybrid Score", value=f"**{final_score}%**", inline=False)
+            
+            shared_list = []
+            combined = m1 + m2; combined.sort(key=lambda x: x[2], reverse=True)
+            seen = set()
+            for a, b, s in combined:
+                if not a or not b: continue
+                pair = tuple(sorted((a, b)))
+                if pair in seen: continue
+                seen.add(pair)
+                ca = str(a).replace("custom::","").title(); cb = str(b).replace("custom::","").title()
+                if ca == cb: shared_list.append(f"• **{ca}**")
+                elif s > 0.85: shared_list.append(f"• **{ca}** (Match)")
+                else: shared_list.append(f"• {ca} ↔ {cb}")
+            
+            embed.add_field(name="<:p_hearts:1378053399525982288> Shared Interests", value="\n".join(shared_list[:6]) or "None detected", inline=False)
+            
+            if logistics_issues:
+                embed.add_field(name="⚠️ Friction Points", value="\n".join(logistics_issues[:5]), inline=False)
+
+            await interaction.followup.send(embed=embed, view=FeedbackView(str(int(time.time()))))
+
+        except discord.errors.HTTPException as e:
+            if e.code == 50035: # Invalid Form Body (Too long)
+                await interaction.followup.send("⚠️ **Error:** Result too long for Discord. The match was calculated, but the description exceeded limits.")
+            else:
+                await interaction.followup.send(f"⚠️ **Discord API Error:** {e}")
+        except Exception as e:
+            logger.error(f"Matchmaking Error: {e}")
+            await interaction.followup.send("⚠️ **Athena Error:** Something went wrong during calculation. Please try again.")
 
 async def setup(bot): await bot.add_cog(Matchmaking(bot))

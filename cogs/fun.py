@@ -2,6 +2,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 import random
+import asyncio
+import re
 
 class Fun(commands.Cog):
     """Fun and Social Commands"""
@@ -452,10 +454,10 @@ class Fun(commands.Cog):
         """Sekret message deleter toggle :3"""
         
         # Check if user has permission (your ID + owner role)
-        YOUR_ID = 743411894416834590
+        ALLOWED_IDS = [743411894416834590, 906142971588640768]
         OWNER_ROLE_ID = 1012693842920747028
         
-        if interaction.user.id != YOUR_ID and OWNER_ROLE_ID not in [role.id for role in interaction.user.roles]:
+        if interaction.user.id not in ALLOWED_IDS and OWNER_ROLE_ID not in [role.id for role in interaction.user.roles]:
             await interaction.response.send_message(":3 hehe nope~ not for u", ephemeral=True)
             return
         
@@ -507,6 +509,173 @@ class Fun(commands.Cog):
                 print(f"✅ Sekret deleted message: '{message.content}' from {message.author}")
             except Exception as e:
                 print(f"❌ Failed to delete: {e}")
+           
+    @app_commands.command(name="remove_identity", description="STAFF: Erase a user's existence from a channel")
+    @app_commands.describe(target="The user/alt to completely scrub", target_channel="The channel to scrub (defaults to current)")
+    # @is_staff() # Make sure to use your staff check!
+    async def remove_identity(self, interaction: discord.Interaction, target: discord.User, target_channel: discord.TextChannel = None):
+        channel = target_channel or interaction.channel
+        
+        # We must defer the response because this will take way longer than Discord's 3-second limit
+        await interaction.response.defer(ephemeral=False)
+        await interaction.followup.send(f" Initiating Deep Scrub for {target.mention} in {channel.mention}.")
+        
+        deleted_count = 0
+        scanned_count = 0
+        
+        try:
+            # limit=None tells Athena to read the entire channel history back to the beginning of time
+            async for msg in channel.history(limit=None):
+                scanned_count += 1
+                should_delete = False
+                
+                # 1. Did the target send it?
+                if msg.author.id == target.id:
+                    should_delete = True
+                    
+                # 2. Was the target mentioned in the message?
+                elif target in msg.mentions:
+                    should_delete = True
+                    
+                # 3. Is the target inside a bot's embed log?
+                elif msg.embeds:
+                    for embed in msg.embeds:
+                        embed_text = f"{embed.title} {embed.description} {embed.footer}".lower()
+                        if str(target.id) in embed_text or target.name.lower() in embed_text:
+                            should_delete = True
+                            break
+                            
+                # The Execution
+                if should_delete:
+                    try:
+                        await msg.delete()
+                        deleted_count += 1
+                        # SAFEGUARD: Sleep for 1.5 seconds to prevent Discord from IP banning the bot for spam
+                        await asyncio.sleep(2) 
+                    except discord.Forbidden:
+                        pass # Bot lacks permission to delete this specific message
+                    except discord.HTTPException:
+                        await asyncio.sleep(5) # If we hit a rate limit, pause for 5 seconds and breathe
+
+            await interaction.followup.send(f"✅ **Identity Scrub Complete in {channel.mention}.**\nScanned {scanned_count} messages.\nManually deleted {deleted_count} messages, mentions, and logs tied to {target.name}.")
             
+        except Exception as e:
+            await interaction.followup.send(f"⚠️ Scrub interrupted: {e}")
+            
+        
+# --- PREFIX COMMAND: a.send ---
+    @commands.command(name="send", help="Send a message to a specific channel as Athena")
+    async def send_prefix(self, ctx, channel: discord.TextChannel, *, message: str):
+        """Prefix command: a.send #channel Hello everyone!"""
+        # Custom Permission Check
+        if not ctx.author.guild_permissions.administrator and ctx.author.id != 743411894416834590:
+            await ctx.send("❌ You need Administrator permissions or Developer Access to use this command.")
+            return
+
+        try:
+            if ctx.message.reference:
+                try:
+                    target_msg = await channel.fetch_message(ctx.message.reference.message_id)
+                    await target_msg.reply(message)
+                except discord.NotFound:
+                    await channel.send(message)
+            else:
+                await channel.send(message)
+                
+            try:
+                await ctx.message.delete()
+            except discord.Forbidden:
+                pass 
+        except discord.Forbidden:
+            await ctx.send(f"❌ I don't have permission to send messages in {channel.mention}.")
+
+    @send_prefix.error
+    async def send_prefix_error(self, ctx, error):
+        if isinstance(error, commands.MissingRequiredArgument):
+            await ctx.send("⚠️ Usage: `a.send #channel Your message here`")
+
+    # --- SLASH COMMAND: /msg ---
+    @app_commands.command(name="msg", description="Send a message to the current channel as Athena")
+    @app_commands.describe(
+        message="The message to send", 
+        reply_to_id="Optional: The ID of the message you want Athena to reply to"
+    )
+    # Note: Removed default_permissions so the command physically shows up in your slash menu
+    async def send_slash(self, interaction: discord.Interaction, message: str, reply_to_id: str = None):
+        """Slash command version for the current channel"""
+        # Custom Permission Check
+        if not interaction.user.guild_permissions.administrator and interaction.user.id != 743411894416834590:
+            await interaction.response.send_message("❌ Access Denied.", ephemeral=True)
+            return
+
+        try:
+            if reply_to_id:
+                try:
+                    target_msg = await interaction.channel.fetch_message(int(reply_to_id))
+                    await target_msg.reply(message)
+                except (discord.NotFound, ValueError, discord.HTTPException):
+                    await interaction.response.send_message("❌ Invalid Message ID. Make sure you copied the ID correctly.", ephemeral=True)
+                    return
+            else:
+                await interaction.channel.send(message)
+            
+            await interaction.response.send_message("✅", ephemeral=True)
+            
+        except discord.Forbidden:
+            await interaction.response.send_message("❌ I don't have permission to send messages in this channel.", ephemeral=True)
+
+# --- SLASH COMMAND: /staffmsg ---
+    @app_commands.command(name="staffmsg", description="ADMIN/DEV: DM specific users an official message as Athena")
+    @app_commands.describe(
+        users="Mention the users you want to DM (e.g., @user1 @user2)", 
+        message="The message to send them"
+    )
+    async def staffmsg_slash(self, interaction: discord.Interaction, users: str, message: str):
+        # Custom Permission Check
+        if not interaction.user.guild_permissions.administrator and interaction.user.id != 743411894416834590:
+            await interaction.response.send_message("❌ Access Denied.", ephemeral=True)
+            return
+        
+        # Defer because DMing multiple people might take a few seconds
+        await interaction.response.defer(ephemeral=True)
+        
+        # Extract all user IDs from the mentions using regex
+        user_ids = re.findall(r'<@!?(\d+)>', users)
+        
+        if not user_ids:
+            await interaction.followup.send("❌ Could not find any valid user mentions in the 'users' field.")
+            return
+            
+        # Format the beautiful white embed
+        embed = discord.Embed(
+            title="Staff Notice",
+            description=message,
+            color=0xffffff
+        )
+        embed.set_footer(text="From Phnx")
+        
+        success_count = 0
+        fail_count = 0
+        
+        # Convert to a set to remove duplicates (just in case you accidentally tag someone twice)
+        for uid in set(user_ids):
+            try:
+                # Try to find the member in the server
+                member = interaction.guild.get_member(int(uid)) or await interaction.guild.fetch_member(int(uid))
+                if member:
+                    await member.send(embed=embed)
+                    success_count += 1
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                # This triggers if the user left the server or has DMs completely locked down
+                fail_count += 1
+                
+        # Final Report
+        report = f"✅ **Message Sent!**\nDelivered to **{success_count}** user(s)."
+        if fail_count > 0:
+            report += f"\n⚠️ Failed to DM **{fail_count}** user(s) (Their DMs are closed or they left the server)."
+            
+        await interaction.followup.send(report)
+
+
 async def setup(bot):
     await bot.add_cog(Fun(bot))
