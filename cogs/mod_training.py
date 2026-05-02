@@ -395,7 +395,7 @@ class ModTraining(commands.Cog):
         embed.description = f"All database records for {user.mention} have been permanently wiped.\n\n*This action cannot be undone.*"
         embed.set_footer(text="Powered by Palantir")
         
-        await interaction.response.send_message(embed=embed)
+        await interaction.followup.send(embed=embed)
 
     @app_commands.command(name="training", description="Trainee: Begin your mandatory staff training module")
     async def start_training(self, interaction: discord.Interaction):
