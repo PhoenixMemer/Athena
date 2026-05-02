@@ -3,6 +3,7 @@ import sys
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
+# Mobile Sync Test - April 2026
 
 # Load environment variables
 load_dotenv()
@@ -34,6 +35,7 @@ initial_extensions = [
     'cogs.vanity',
     'cogs.matchmakingv13',
     'cogs.mod_training',
+    'cogs.economy',#a72424
     'cogs.cupid_blacklist'
 ]
 
