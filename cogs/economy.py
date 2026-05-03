@@ -38,6 +38,15 @@ class Economy(commands.Cog):
         try: cursor.execute("ALTER TABLE wallets ADD COLUMN highest_balance INTEGER DEFAULT 0")
         except sqlite3.OperationalError: pass
             
+        # Exchange Rate Table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS config (
+                id INTEGER PRIMARY KEY,
+                mimu_rate INTEGER DEFAULT 100
+            )
+        ''')
+        cursor.execute("INSERT OR IGNORE INTO config (id, mimu_rate) VALUES (1, 100)")
+            
         conn.commit()
         conn.close()
 
@@ -52,6 +61,24 @@ class Economy(commands.Cog):
             card = result[1] if result[1] else "silver"
             return result[0], card
         return 0, "silver"
+
+    def get_rate(self) -> int:
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT mimu_rate FROM config WHERE id = 1")
+        rate = cursor.fetchone()[0]
+        conn.close()
+        return rate
+
+    def add_balance(self, user_id: int, amount: int):
+        """Used by the mint command to add money and track all-time highs"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO wallets (user_id, balance, active_card, highest_balance) VALUES (?, ?, 'silver', ?) ON CONFLICT(user_id) DO UPDATE SET balance = balance + ?", (user_id, amount, max(0, amount), amount))
+        # Ensure highest_balance updates if the mint pushes them to a new all-time high
+        cursor.execute("UPDATE wallets SET highest_balance = MAX(highest_balance, balance) WHERE user_id = ?", (user_id,))
+        conn.commit()
+        conn.close()
 
     async def generate_wallet_card(self, member: discord.Member, balance: int, requested_card: str) -> io.BytesIO:
         # --- STRICT AUTO-DOWNGRADE CHECK ---
@@ -81,6 +108,10 @@ class Economy(commands.Cog):
         buffer.seek(0)
         return buffer
 
+    # ==========================================
+    # USER COMMANDS
+    # ==========================================
+
     @app_commands.command(name="bal", description="Check your Athena Reserve wallet balance")
     async def balance(self, interaction: discord.Interaction):
         await interaction.response.defer() 
@@ -105,7 +136,6 @@ class Economy(commands.Cog):
         selected = card_type.value
         threshold = CARD_TIERS[selected]["threshold"]
 
-        # Blocks them from equipping a card if their current balance doesn't meet the requirement
         if bal < threshold:
             await interaction.response.send_message(f"❌ **Access Denied.** You need a current balance of **A$ {threshold:,}** to use the {CARD_TIERS[selected]['name']}. (Your Balance: A$ {bal:,})", ephemeral=True)
             return
@@ -117,6 +147,48 @@ class Economy(commands.Cog):
         conn.close()
 
         await interaction.response.send_message(f"💳 **Card Updated!** You have equipped the **{CARD_TIERS[selected]['name']}**.\nRun `/bal` to see it!")
+
+    @app_commands.command(name="exchange_rate", description="View the current Mimu to Athena exchange rate")
+    async def view_rate(self, interaction: discord.Interaction):
+        rate = self.get_rate()
+        embed = discord.Embed(title="🏦 Athena Reserve Exchange Rate", color=0xffffff)
+        embed.description = f"**Current Rate:** `1 Athena Coin` = `{rate} Mimu Coins`\n\n*Ping the developer to request a currency exchange.*"
+        await interaction.response.send_message(embed=embed)
+
+
+    # ==========================================
+    # ADMIN COMMANDS (STRICT PHOENIX ONLY LOCK)
+    # ==========================================
+
+    @app_commands.command(name="set_rate", description="Set the Mimu exchange rate")
+    @app_commands.describe(new_rate="How many Mimu coins equal 1 Athena coin?")
+    async def set_rate(self, interaction: discord.Interaction, new_rate: int):
+        # STRIPPED 'administrator' bypass. ONLY ID 743411894416834590 works.
+        if interaction.user.id != 743411894416834590:
+            await interaction.response.send_message("❌ **Security Alert:** Access Denied. Only Phoenix can alter the central exchange rate.", ephemeral=True)
+            return
+
+        if new_rate < 1:
+            await interaction.response.send_message("❌ Rate must be at least 1.", ephemeral=True)
+            return
+
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("UPDATE config SET mimu_rate = ? WHERE id = 1", (new_rate,))
+        conn.commit()
+        conn.close()
+
+        await interaction.response.send_message(f"✅ **Exchange Rate Updated!**\nNew Rate: 1 Athena = {new_rate} Mimu.")
+
+    @app_commands.command(name="mint", description="Print Athena coins and add them to a user's wallet")
+    async def mint_coins(self, interaction: discord.Interaction, user: discord.Member, amount: int):
+        # STRIPPED 'administrator' bypass. ONLY ID 743411894416834590 works.
+        if interaction.user.id != 743411894416834590:
+            return await interaction.response.send_message("❌ **Security Alert:** Access Denied. Only Phoenix has access to the Reserve Printing Press.", ephemeral=True)
+            
+        self.add_balance(user.id, amount)
+        bal, _ = self.get_wallet_data(user.id)
+        await interaction.response.send_message(f"🏦 **Bank Transfer Successful**\nAdded {amount:,} coins to {user.mention}.\nNew Balance: **A$ {bal:,}**")
 
 async def setup(bot):
     await bot.add_cog(Economy(bot))
