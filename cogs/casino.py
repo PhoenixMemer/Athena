@@ -360,7 +360,7 @@ class Casino(commands.Cog):
     def __init__(self, bot): self.bot = bot
     @app_commands.command(name="casino", description="Enter the Grand Casino to wager your Athena Coins")
     async def casino_lobby(self, interaction: discord.Interaction):
-        embed = discord.Embed(title="🥂 The Grand Casino", color=0x2b2d31)
+        embed = discord.Embed(title="🥂 The Grand Casino", color=0xffffff)
         embed.description = (
             "Welcome to the high-roller tables, where fortunes are made and lost.\n"
             "Select a game from the dropdown below to place your wager.\n\n"
