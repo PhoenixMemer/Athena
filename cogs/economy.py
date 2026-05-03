@@ -6,21 +6,24 @@ import os
 import io
 from PIL import Image, ImageDraw, ImageFont
 
+# --- THE CARD TIER DICTIONARY ---
+CARD_TIERS = {
+    "silver": {"threshold": 0, "file": "card_silver.png", "color": (255, 255, 255), "name": "Standard Silver"},
+    "gold": {"threshold": 100000, "file": "card_gold.png", "color": (255, 255, 255), "name": "Gold Elite"},
+    "plat_black": {"threshold": 600000, "file": "card_plat_black.png", "color": (255, 255, 255), "name": "Platinum Black"},
+    "plat_pink": {"threshold": 600000, "file": "card_plat_pink.png", "color": (219, 120, 200), "name": "Platinum Chérie"}
+}
+
 class Economy(commands.Cog):
-    """Athena Central Bank & Economy System"""
-    
     def __init__(self, bot):
         self.bot = bot
         self.db_path = "economy.db"
-        self.template_path = "athena_card.png"
         self.setup_db()
         
     def setup_db(self):
-        """Initializes the separate economy database"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
-        # Wallets Table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS wallets (
                 user_id INTEGER PRIMARY KEY,
@@ -28,128 +31,92 @@ class Economy(commands.Cog):
             )
         ''')
         
-        # Exchange Rate Table (Always stored in row id=1)
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS config (
-                id INTEGER PRIMARY KEY,
-                mimu_rate INTEGER DEFAULT 100
-            )
-        ''')
-        
-        # Ensure the default rate exists
-        cursor.execute("INSERT OR IGNORE INTO config (id, mimu_rate) VALUES (1, 100)")
-        
+        # Safely upgrade existing database
+        try: cursor.execute("ALTER TABLE wallets ADD COLUMN active_card TEXT DEFAULT 'silver'")
+        except sqlite3.OperationalError: pass
+            
+        try: cursor.execute("ALTER TABLE wallets ADD COLUMN highest_balance INTEGER DEFAULT 0")
+        except sqlite3.OperationalError: pass
+            
         conn.commit()
         conn.close()
 
-    def get_balance(self, user_id: int) -> int:
+    def get_wallet_data(self, user_id: int):
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
-        cursor.execute("SELECT balance FROM wallets WHERE user_id = ?", (user_id,))
+        cursor.execute("SELECT balance, active_card FROM wallets WHERE user_id = ?", (user_id,))
         result = cursor.fetchone()
         conn.close()
-        return result[0] if result else 0
-
-    def add_balance(self, user_id: int, amount: int):
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.execute("INSERT INTO wallets (user_id, balance) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET balance = balance + ?", (user_id, amount, amount))
-        conn.commit()
-        conn.close()
-
-    def get_rate(self) -> int:
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.execute("SELECT mimu_rate FROM config WHERE id = 1")
-        rate = cursor.fetchone()[0]
-        conn.close()
-        return rate
-
-    async def generate_wallet_card(self, member: discord.Member, balance: int) -> io.BytesIO:
-        """Generates the Arcane-style image card"""
-        # If the template doesn't exist yet, generate a sleek dark fallback image
-        if not os.path.exists(self.template_path):
-            img = Image.new('RGB', (800, 250), color=(15, 23, 42)) # Dark Navy
-            draw = ImageDraw.Draw(img)
-            draw.text((40, 20), "⚠️ athena_card.png NOT FOUND", fill=(255, 100, 100))
-        else:
-            img = Image.open(self.template_path).convert("RGBA")
-            draw = ImageDraw.Draw(img)
-
-        # Try to load a default font, otherwise fallback to basic PIL font
-        try:
-            # Using a larger font size for the balance
-            font_large = ImageFont.truetype("arial.ttf", 60)
-            font_small = ImageFont.truetype("arial.ttf", 35)
-        except IOError:
-            font_large = ImageFont.load_default()
-            font_small = ImageFont.load_default()
-
-        # Text positioning (You will need to adjust these X, Y coordinates based on your actual card design)
-        # Writing the Username
-        draw.text((50, 40), f"{member.display_name.upper()}", fill=(255, 255, 255), font=font_small)
         
-        # Writing the Balance
-        draw.text((50, 120), f"A$ {balance:,}", fill=(255, 215, 0), font=font_large) # Gold color
+        if result:
+            card = result[1] if result[1] else "silver"
+            return result[0], card
+        return 0, "silver"
 
-        # Save to memory buffer instead of disk
+    async def generate_wallet_card(self, member: discord.Member, balance: int, requested_card: str) -> io.BytesIO:
+        # --- STRICT AUTO-DOWNGRADE CHECK ---
+        valid_card = requested_card
+        if balance < CARD_TIERS[valid_card]["threshold"]:
+            if balance >= 600000: valid_card = "plat_black" 
+            elif balance >= 100000: valid_card = "gold"
+            else: valid_card = "silver"
+
+        card_info = CARD_TIERS[valid_card]
+        
+        img = Image.open(card_info["file"]).convert("RGBA")
+        draw = ImageDraw.Draw(img)
+
+        font_path = "card_font.ttf"
+        if not os.path.exists(font_path): font_path = "cogs/card_font.ttf"
+
+        try: font_main = ImageFont.truetype(font_path, 100)
+        except IOError: font_main = ImageFont.load_default()
+
+        # Dynamic Color specific to the Tier
+        draw.text((200, 930), member.name.upper()[:20], fill=card_info["color"], font=font_main)
+        draw.text((1300, 930), f"A$ {balance:,}", fill=card_info["color"], font=font_main)
+
         buffer = io.BytesIO()
         img.save(buffer, format="PNG")
         buffer.seek(0)
         return buffer
 
-    # --- USER COMMANDS ---
-
     @app_commands.command(name="bal", description="Check your Athena Reserve wallet balance")
     async def balance(self, interaction: discord.Interaction):
-        await interaction.response.defer() # Defer because image generation takes a second
+        await interaction.response.defer() 
+        bal, active_card = self.get_wallet_data(interaction.user.id)
         
-        bal = self.get_balance(interaction.user.id)
-        image_buffer = await self.generate_wallet_card(interaction.user, bal)
-        
-        # Send the image buffer to Discord
-        file = discord.File(fp=image_buffer, filename="wallet.png")
-        await interaction.followup.send(file=file)
+        try:
+            image_buffer = await self.generate_wallet_card(interaction.user, bal, active_card)
+            file = discord.File(fp=image_buffer, filename="wallet.png")
+            await interaction.followup.send(file=file)
+        except Exception as e:
+            await interaction.followup.send(f"⚠️ Error: Make sure your 4 card images are uploaded and named correctly! ({e})")
 
-    @app_commands.command(name="exchange_rate", description="View the current Mimu to Athena exchange rate")
-    async def view_rate(self, interaction: discord.Interaction):
-        rate = self.get_rate()
-        embed = discord.Embed(title="🏦 Athena Reserve Exchange Rate", color=0xffffff)
-        embed.description = f"**Current Rate:** `1 Athena Coin` = `{rate} Mimu Coins`\n\n*Ping the developer to request a currency exchange.*"
-        await interaction.response.send_message(embed=embed)
+    @app_commands.command(name="setcard", description="Equip an unlocked debit card tier")
+    @app_commands.choices(card_type=[
+        app_commands.Choice(name="Standard Silver (0+ A$)", value="silver"),
+        app_commands.Choice(name="Gold Elite (100k+ A$)", value="gold"),
+        app_commands.Choice(name="Platinum Black (600k+ A$)", value="plat_black"),
+        app_commands.Choice(name="Platinum Chérie (600k+ A$)", value="plat_pink"),
+    ])
+    async def setcard(self, interaction: discord.Interaction, card_type: app_commands.Choice[str]):
+        bal, _ = self.get_wallet_data(interaction.user.id)
+        selected = card_type.value
+        threshold = CARD_TIERS[selected]["threshold"]
 
-    # --- ADMIN/DEV COMMANDS ---
-
-    @app_commands.command(name="set_rate", description="ADMIN: Set the Mimu exchange rate")
-    @app_commands.describe(new_rate="How many Mimu coins equal 1 Athena coin?")
-    async def set_rate(self, interaction: discord.Interaction, new_rate: int):
-        if not interaction.user.guild_permissions.administrator and interaction.user.id != 743411894416834590:
-            await interaction.response.send_message("❌ Access Denied.", ephemeral=True)
-            return
-
-        if new_rate < 1:
-            await interaction.response.send_message("❌ Rate must be at least 1.", ephemeral=True)
+        # Blocks them from equipping a card if their current balance doesn't meet the requirement
+        if bal < threshold:
+            await interaction.response.send_message(f"❌ **Access Denied.** You need a current balance of **A$ {threshold:,}** to use the {CARD_TIERS[selected]['name']}. (Your Balance: A$ {bal:,})", ephemeral=True)
             return
 
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
-        cursor.execute("UPDATE config SET mimu_rate = ? WHERE id = 1", (new_rate,))
+        cursor.execute("UPDATE wallets SET active_card = ? WHERE user_id = ?", (selected, interaction.user.id))
         conn.commit()
         conn.close()
 
-        await interaction.response.send_message(f"✅ **Exchange Rate Updated!**\nNew Rate: 1 Athena = {new_rate} Mimu.")
-
-    @app_commands.command(name="mint", description="ADMIN: Print Athena coins and add them to a user's wallet")
-    @app_commands.describe(user="The user receiving funds", amount="Amount to add (can be negative to remove)")
-    async def mint_coins(self, interaction: discord.Interaction, user: discord.Member, amount: int):
-        if not interaction.user.guild_permissions.administrator and interaction.user.id != 743411894416834590:
-            await interaction.response.send_message("❌ Access Denied.", ephemeral=True)
-            return
-
-        self.add_balance(user.id, amount)
-        new_bal = self.get_balance(user.id)
-        
-        await interaction.response.send_message(f"🏦 **Bank Transfer Successful**\nAdded {amount:,} coins to {user.mention}.\nNew Balance: **A$ {new_bal:,}**")
+        await interaction.response.send_message(f"💳 **Card Updated!** You have equipped the **{CARD_TIERS[selected]['name']}**.\nRun `/bal` to see it!")
 
 async def setup(bot):
     await bot.add_cog(Economy(bot))

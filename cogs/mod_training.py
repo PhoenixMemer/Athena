@@ -359,7 +359,7 @@ class ModTraining(commands.Cog):
             welcome_embed = discord.Embed(title="🛡️ Welcome to the Team", color=0xffffff)
             welcome_embed.description = "Your official Moderation Profile has been created in the database.\n\nPlease head to the server and run the `/training` command to complete your mandatory onboarding."
             await user.send(embed=welcome_embed)
-        except discord.Forbidden:
+        except (discord.Forbidden, discord.HTTPException):
             dm_failed = True
 
         embed = discord.Embed(title="𝑀𝑜𝑑 𝑃𝑟𝑜𝑓𝑖𝑙𝑒 𝐶𝑟𝑒𝑎𝑡𝑒𝑑", color=0xffffff)
@@ -372,27 +372,43 @@ class ModTraining(commands.Cog):
         await interaction.followup.send(embed=embed)
 
     @app_commands.command(name="deleteprofile", description="Head Staff: Permanently delete a mod's profile from the database")
-    @app_commands.describe(user="The user whose profile should be wiped")
-    @is_head_staff() # <-- Replaced Admin Check
-    async def deleteprofile(self, interaction: discord.Interaction, user: discord.Member):
+    @app_commands.describe(user_id="The Discord ID of the user whose profile should be wiped")
+    @is_head_staff()
+    async def deleteprofile(self, interaction: discord.Interaction, user_id: str):
+        # Tell Discord to wait while we search the database and API
+        await interaction.response.defer()
+        
+        try:
+            target_id = int(user_id)
+        except ValueError:
+            await interaction.followup.send("❌ Please provide a valid numeric User ID.")
+            return
+
         conn = sqlite3.connect("modsVSC.db")
         cursor = conn.cursor()
         
-        cursor.execute("SELECT * FROM mod_profiles WHERE user_id = ?", (user.id,))
+        cursor.execute("SELECT * FROM mod_profiles WHERE user_id = ?", (target_id,))
         exists = cursor.fetchone()
         
         if not exists:
-            await interaction.response.send_message(f"No profile found for {user.mention} in the database.", ephemeral=True)
+            await interaction.followup.send(f"No profile found for ID `{target_id}` in the database.")
             conn.close()
             return
             
-        cursor.execute("DELETE FROM mod_profiles WHERE user_id = ?", (user.id,))
-        cursor.execute("DELETE FROM mod_strikes WHERE user_id = ?", (user.id,)) 
+        cursor.execute("DELETE FROM mod_profiles WHERE user_id = ?", (target_id,))
+        cursor.execute("DELETE FROM mod_strikes WHERE user_id = ?", (target_id,)) 
         conn.commit()
         conn.close()
         
+        # This is where fetch_user comes in! It grabs their name even if they left the server.
+        try:
+            user = await self.bot.fetch_user(target_id)
+            user_display = f"{user.mention} ({user.name})"
+        except discord.NotFound:
+            user_display = f"Unknown User (ID: {target_id})"
+        
         embed = discord.Embed(title="𝑀𝑜𝑑 𝑃𝑟𝑜𝑓𝑖𝑙𝑒 𝐷𝑒𝑙𝑒𝑡𝑒𝑑", color=0xffffff)
-        embed.description = f"All database records for {user.mention} have been permanently wiped.\n\n*This action cannot be undone.*"
+        embed.description = f"All database records for {user_display} have been permanently wiped.\n\n*This action cannot be undone.*"
         embed.set_footer(text="Powered by Palantir")
         
         await interaction.followup.send(embed=embed)
@@ -598,7 +614,7 @@ class ModTraining(commands.Cog):
                 "commendations": commendations
             })
 
-        embed = discord.Embed(title="📋 𝐶ℎ𝑒𝑟𝑟𝑖𝑖𝑒𝑠 𝑆𝑡𝑎𝑓𝑓 𝑅𝑜𝑠𝑡𝑒𝑟", color=0xffffff)
+        embed = discord.Embed(title="📋 Chérie 𝑆𝑡𝑎𝑓𝑓 𝑅𝑜𝑠𝑡𝑒𝑟", color=0xffffff)
         
         for rank_name, members in roster_dict.items():
             rank_text = ""
