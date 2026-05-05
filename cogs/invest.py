@@ -65,7 +65,7 @@ class Investments(commands.Cog):
         stocks = cursor.fetchall()
         conn.close()
 
-        embed = discord.Embed(title="📊 Athena Stock Exchange", color=0x2b2d31, description="*Prices fluctuate naturally every 2 hours based on asset volatility.*")
+        embed = discord.Embed(title="📊 Athena Stock Exchange", color=0xffffff, description="*Prices fluctuate naturally every 2 hours based on asset volatility.*")
         for sym, name, price, trend, vol in stocks:
             risk = "Low" if vol <= 5 else "Med" if vol <= 20 else "High"
             embed.add_field(name=f"{name} ({sym})", value=f"**Price:** A$ {price:,}\n**Trend:** {trend}\n**Risk:** {risk} Volatility", inline=False)
@@ -136,7 +136,7 @@ class Investments(commands.Cog):
 
         if not holdings: return await interaction.response.send_message("💼 Your portfolio is empty. Run `/invest market`!", ephemeral=True)
 
-        embed = discord.Embed(title=f"💼 {interaction.user.name}'s Portfolio", color=0x2b2d31)
+        embed = discord.Embed(title=f"💼 {interaction.user.name}'s Portfolio", color=0xffffff)
         total_net_worth = 0
         for sym, shares, price, name in holdings:
             value = shares * price

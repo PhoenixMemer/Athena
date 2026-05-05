@@ -50,7 +50,7 @@ async def update_balance(interaction: discord.Interaction, amount: int):
 
 
 # ==========================================
-# 🃏 GAME 1: HI-LO (NEW)
+# 🃏 1. HI-LO
 # ==========================================
 class HiLoView(discord.ui.View):
     def __init__(self, user_id: int, bet: int):
@@ -71,12 +71,11 @@ class HiLoView(discord.ui.View):
         if interaction.user.id != self.user_id: return
         next_card = self.deck.pop()
         curr_val, next_val = self.get_rank(self.current_card), self.get_rank(next_card)
-        
         won = (choice == "high" and next_val > curr_val) or (choice == "low" and next_val < curr_val)
         
         if won:
             self.step += 1
-            self.mult += (0.2 + (0.1 * self.step)) # Multiplier scales up faster the longer they survive
+            self.mult += (0.2 + (0.1 * self.step))
             self.current_card = next_card
             embed = discord.Embed(title="🃏 Hi-Lo", color=0x00ff00, description=f"**Card:** {self.current_card}\n\n✅ Correct! Next card was {'Higher' if choice=='high' else 'Lower'}.\n\n💰 **Current Value:** A$ {int(self.bet * self.mult):,} (`{self.mult:.2f}x`)")
             await interaction.response.edit_message(embed=embed, view=self)
@@ -101,7 +100,7 @@ class HiLoView(discord.ui.View):
         self.stop()
 
 # ==========================================
-# 🥥 GAME 2: SHELL GAME (NEW)
+# 🥥 2. SHELL GAME
 # ==========================================
 class ShellGameView(discord.ui.View):
     def __init__(self, user_id: int, bet: int):
@@ -112,7 +111,6 @@ class ShellGameView(discord.ui.View):
     async def pick(self, interaction: discord.Interaction, cup_idx: int):
         if interaction.user.id != self.user_id: return
         for c in self.children: c.disabled = True
-        
         won = (cup_idx == self.prize_cup)
         if won:
             winnings = int(self.bet * 2.5)
@@ -120,7 +118,6 @@ class ShellGameView(discord.ui.View):
             embed = discord.Embed(title="🥥 You found it!", color=0x00ff00, description=f"The diamond was under Cup {cup_idx+1}!\n\n🏆 **Payout:** A$ {winnings:,}\n🏦 **Balance:** A$ {get_balance(self.user_id):,}")
         else:
             embed = discord.Embed(title="❌ Empty!", color=0xff0000, description=f"The diamond was under Cup {self.prize_cup+1}.\n\n💸 **Lost:** A$ {self.bet:,}\n🏦 **Balance:** A$ {get_balance(self.user_id):,}")
-        
         await interaction.response.edit_message(embed=embed, view=self)
         self.stop()
 
@@ -132,7 +129,7 @@ class ShellGameView(discord.ui.View):
     async def c3(self, i, b): await self.pick(i, 2)
 
 # ==========================================
-# 🐎 GAME 3: HORSE RACING (NEW ANIMATED)
+# 🐎 3. HORSE RACING
 # ==========================================
 class HorseRaceView(discord.ui.View):
     def __init__(self, user_id: int, bet: int):
@@ -142,28 +139,20 @@ class HorseRaceView(discord.ui.View):
     async def race(self, interaction: discord.Interaction, choice: int):
         if interaction.user.id != self.user_id: return
         for c in self.children: c.disabled = True
-        
         horses = ["🔴 Red", "🔵 Blue", "🟢 Green", "🟡 Yellow"]
         positions = [0, 0, 0, 0]
-        track_len = 10
-        
         embed = discord.Embed(title="🏁 And they're off!", color=0x2b2d31)
         await interaction.response.edit_message(embed=embed, view=self)
         
-        for _ in range(4): # 4 Frames of animation
+        for _ in range(4):
             await asyncio.sleep(1.2)
             for i in range(4): positions[i] += random.randint(1, 3)
-            
             desc = ""
-            for i in range(4):
-                spaces = "—" * min(positions[i], track_len)
-                desc += f"{horses[i].split()[0]} {spaces}🐎\n"
-            
+            for i in range(4): desc += f"{horses[i].split()[0]} {'—' * min(positions[i], 10)}🐎\n"
             embed.description = desc
             await interaction.edit_original_response(embed=embed, view=self)
 
         winner_idx = positions.index(max(positions))
-        
         if choice == winner_idx:
             winnings = int(self.bet * 3.5)
             await update_balance(interaction, winnings)
@@ -172,7 +161,6 @@ class HorseRaceView(discord.ui.View):
         else:
             embed.title, embed.color = "💀 You Lost", 0xff0000
             embed.add_field(name="Result", value=f"{horses[winner_idx]} won the race.\n**Lost:** A$ {self.bet:,}\n🏦 **Balance:** A$ {get_balance(self.user_id):,}")
-            
         await interaction.edit_original_response(embed=embed, view=self)
         self.stop()
 
@@ -186,7 +174,7 @@ class HorseRaceView(discord.ui.View):
     async def r4(self, i, b): await self.race(i, 3)
 
 # ==========================================
-# 🎲 GAME 4: CRAPS / 7-ROLL (NEW)
+# 🎲 4. CRAPS
 # ==========================================
 class DiceView(discord.ui.View):
     def __init__(self, user_id: int, bet: int):
@@ -196,15 +184,13 @@ class DiceView(discord.ui.View):
     async def roll(self, interaction: discord.Interaction, choice: str):
         if interaction.user.id != self.user_id: return
         for c in self.children: c.disabled = True
-        
         embed = discord.Embed(title="🎲 Rolling the Dice...", color=0x2b2d31, description="🎲 🎲")
         await interaction.response.edit_message(embed=embed, view=self)
         await asyncio.sleep(1.5)
         
         d1, d2 = random.randint(1, 6), random.randint(1, 6)
         total = d1 + d2
-        
-        won = False
+        won, mult = False, 0
         if choice == "under" and total < 7: won, mult = True, 2
         elif choice == "over" and total > 7: won, mult = True, 2
         elif choice == "exact" and total == 7: won, mult = True, 5
@@ -213,8 +199,7 @@ class DiceView(discord.ui.View):
             winnings = self.bet * mult
             await update_balance(interaction, winnings)
             msg, clr = f"🎉 **You Won!** Payout: A$ {winnings:,}", 0x00ff00
-        else:
-            msg, clr = "💀 **You Lost.**", 0xff0000
+        else: msg, clr = "💀 **You Lost.**", 0xff0000
             
         embed.description = f"🎲 **{d1}** + 🎲 **{d2}** = **{total}**\n\n{msg}\n🏦 **Balance:** A$ {get_balance(self.user_id):,}"
         embed.color = clr
@@ -229,7 +214,7 @@ class DiceView(discord.ui.View):
     async def b_over(self, i, b): await self.roll(i, "over")
 
 # ==========================================
-# 🏛️ GAME 5: BACCARAT (NEW)
+# 🏛️ 5. BACCARAT
 # ==========================================
 class BaccaratView(discord.ui.View):
     def __init__(self, user_id: int, bet: int):
@@ -239,10 +224,7 @@ class BaccaratView(discord.ui.View):
     async def play(self, interaction: discord.Interaction, choice: str):
         if interaction.user.id != self.user_id: return
         for c in self.children: c.disabled = True
-        
-        # Simplified Baccarat: Random score 0-9 for each side (mimicking 2 cards mod 10)
         p_score, b_score = random.randint(0, 9), random.randint(0, 9)
-        
         winner = "player" if p_score > b_score else "banker" if b_score > p_score else "tie"
         
         if choice == winner:
@@ -250,8 +232,7 @@ class BaccaratView(discord.ui.View):
             winnings = self.bet * mult
             await update_balance(interaction, winnings)
             msg, clr = f"🎉 **You Won!** Payout: A$ {winnings:,}", 0x00ff00
-        else:
-            msg, clr = "💀 **You Lost.**", 0xff0000
+        else: msg, clr = "💀 **You Lost.**", 0xff0000
             
         embed = discord.Embed(title="🏛️ Baccarat Result", color=clr)
         embed.add_field(name="Player Score", value=f"**{p_score}**")
@@ -267,11 +248,10 @@ class BaccaratView(discord.ui.View):
     @discord.ui.button(label="Tie (8x)", style=discord.ButtonStyle.success)
     async def t(self, i, b): await self.play(i, "tie")
 
-# ==========================================
-# ORIGINAL GAMES (Coinflip, Blackjack, Mines, Roulette, Crypto, Slots)
-# ==========================================
-# (These remain fully functional and compressed to fit!)
 
+# ==========================================
+# 🪙 6. COINFLIP
+# ==========================================
 class CoinflipView(discord.ui.View):
     def __init__(self, uid, b): super().__init__(timeout=45); self.uid, self.b = uid, b
     async def flip(self, i, c):
@@ -288,6 +268,9 @@ class CoinflipView(discord.ui.View):
     @discord.ui.button(label="TAILS", style=discord.ButtonStyle.secondary)
     async def bt(self, i, b): await self.flip(i, "tails")
 
+# ==========================================
+# ♠️ 7. BLACKJACK
+# ==========================================
 def calc_score(hand):
     s, a = 0, 0
     for c in hand:
@@ -333,6 +316,146 @@ class BlackjackView(discord.ui.View):
         await i.response.edit_message(embed=self.get_e(True, m), view=self); self.stop()
 
 # ==========================================
+# 💣 8. GRID MINES
+# ==========================================
+class MineButton(discord.ui.Button):
+    def __init__(self, index, is_mine, row):
+        super().__init__(style=discord.ButtonStyle.secondary, label="❓", row=row)
+        self.index, self.is_mine = index, is_mine
+
+    async def callback(self, interaction: discord.Interaction):
+        view: MinesView = self.view
+        if interaction.user.id != view.user_id: return await interaction.response.send_message("❌ Not your game!", ephemeral=True)
+        self.disabled = True
+        if self.is_mine:
+            self.emoji, self.label, self.style = "💣", "", discord.ButtonStyle.danger
+            await view.game_over(interaction, won=False)
+        else:
+            self.emoji, self.label, self.style = "💎", "", discord.ButtonStyle.success
+            view.safe_clicks += 1
+            await view.update_game(interaction)
+
+class MinesView(discord.ui.View):
+    def __init__(self, user_id: int, bet: int):
+        super().__init__(timeout=60)
+        self.user_id, self.bet, self.safe_clicks = user_id, bet, 0
+        self.mults = [1.0, 1.15, 1.35, 1.6, 1.9, 2.3, 2.8, 3.5, 4.5, 5.8, 7.5, 10.0, 15.0, 25.0, 50.0, 100.0, 250.0, 500.0]
+        contents = ['💣']*3 + ['💎']*17
+        random.shuffle(contents)
+        for i in range(20): self.add_item(MineButton(i, contents[i] == '💣', i // 5))
+        self.cashout_btn = discord.ui.Button(style=discord.ButtonStyle.primary, label="Cash Out (A$ 0)", emoji="💵", row=4)
+        self.cashout_btn.callback = self.cashout
+        self.add_item(self.cashout_btn)
+
+    async def update_game(self, interaction: discord.Interaction):
+        current_mult = self.mults[self.safe_clicks]
+        self.cashout_btn.label, self.cashout_btn.style = f"Cash Out (A$ {int(self.bet * current_mult):,})", discord.ButtonStyle.success
+        embed = discord.Embed(title="💣 Athena Mines", color=0x2b2d31, description=f"**Wager:** A$ {self.bet:,}\n**Multiplier:** `{current_mult}x`\n*Find diamonds to multiply your profit!*")
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    async def game_over(self, interaction: discord.Interaction, won: bool):
+        for item in self.children:
+            item.disabled = True
+            if isinstance(item, MineButton):
+                if item.is_mine: item.emoji, item.style = "💣", discord.ButtonStyle.secondary
+                else: item.emoji, item.style = "💎", discord.ButtonStyle.secondary
+        if won:
+            winnings = int(self.bet * self.mults[self.safe_clicks])
+            await update_balance(interaction, winnings)
+            embed = discord.Embed(title="💵 Cashed Out!", color=0x00ff00, description=f"🏆 **Payout:** A$ {winnings:,}\n🏦 **Balance:** A$ {get_balance(self.user_id):,}")
+        else:
+            embed = discord.Embed(title="💥 BOOM!", color=0xff0000, description=f"💀 **Lost:** A$ {self.bet:,}\n🏦 **Balance:** A$ {get_balance(self.user_id):,}")
+        await interaction.response.edit_message(embed=embed, view=self)
+        self.stop()
+
+    async def cashout(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id: return
+        if self.safe_clicks == 0: return await interaction.response.send_message("❌ Find 1 diamond first!", ephemeral=True)
+        await self.game_over(interaction, won=True)
+
+# ==========================================
+# 🚀 9. CRYPTO BULL RUN
+# ==========================================
+class CryptoTraderView(discord.ui.View):
+    def __init__(self, user_id: int, bet: int):
+        super().__init__(timeout=45)
+        self.user_id, self.bet, self.step, self.mults = user_id, bet, 0, [1.2, 1.5, 2.0, 3.0, 5.0, 10.0, 25.0]
+
+    @discord.ui.button(label="HOLD (Next Week)", style=discord.ButtonStyle.primary, emoji="📈")
+    async def h(self, interaction, button):
+        if interaction.user.id != self.user_id: return
+        if random.random() < (0.20 + (self.step * 0.08)):
+            for c in self.children: c.disabled = True
+            embed = discord.Embed(title="📉 CRASH!", color=0xff0000, description=f"The bubble burst. Portfolio is zero.\n🏦 **Balance:** A$ {get_balance(self.user_id):,}")
+            embed.set_image(url="https://media.tenor.com/PZcI8Uiyx2UAAAAC/crash-stock-market.gif")
+            await interaction.response.edit_message(embed=embed, view=self)
+            self.stop()
+        else:
+            self.current_mult = self.mults[self.step]
+            self.step += 1
+            next_m = self.mults[self.step] if self.step < len(self.mults) else "MAX"
+            embed = discord.Embed(title="🚀 Crypto Surge", color=0x00ff00, description=f"📊 **Value:** A$ {int(self.bet*self.current_mult):,} (`{self.current_mult}x`)\n⚠️ Hold for `{next_m}x`?")
+            if next_m == "MAX": button.disabled = True
+            await interaction.response.edit_message(embed=embed, view=self)
+
+    @discord.ui.button(label="CASH OUT", style=discord.ButtonStyle.success, emoji="💵")
+    async def c(self, interaction, button):
+        if interaction.user.id != self.user_id: return
+        w = int(self.bet * self.mults[self.step-1 if self.step > 0 else 0])
+        await update_balance(interaction, w)
+        for c in self.children: c.disabled = True
+        embed = discord.Embed(title="💼 Trade Closed", color=0xffd700, description=f"🏆 **Payout:** A$ {w:,}\n🏦 **Balance:** A$ {get_balance(self.user_id):,}")
+        await interaction.response.edit_message(embed=embed, view=self)
+        self.stop()
+
+# ==========================================
+# 🎡 10. ROULETTE
+# ==========================================
+class RouletteView(discord.ui.View):
+    def __init__(self, user_id: int, bet: int):
+        super().__init__(timeout=45)
+        self.user_id, self.bet = user_id, bet
+
+    async def spin(self, interaction: discord.Interaction, choice: str):
+        if interaction.user.id != self.user_id: return
+        for c in self.children: c.disabled = True
+        embed = discord.Embed(title="🎡 Athena Roulette", color=0x2b2d31, description="The wheel is spinning...")
+        await interaction.response.edit_message(embed=embed, view=self)
+        await asyncio.sleep(2)
+        res = random.randint(0, 36)
+        color = "green" if res == 0 else "red" if res % 2 != 0 else "black"
+        emoji, mult = ("🟢", 14) if color == "green" else (("🔴", 2) if color == "red" else ("⚫", 2))
+        if choice == color:
+            await update_balance(interaction, self.bet * mult)
+            msg, clr = f"🎉 **Won!** Payout: A$ {self.bet*mult:,}", 0x00ff00
+        else: msg, clr = "💀 **Lost.**", 0xff0000
+        embed.description, embed.color = f"Landed on: {emoji} **{res} {color.upper()}**\n\n{msg}\n🏦 **Balance:** A$ {get_balance(self.user_id):,}", clr
+        await interaction.edit_original_response(embed=embed, view=self)
+        self.stop()
+
+    @discord.ui.button(label="RED (2x)", style=discord.ButtonStyle.danger, emoji="🔴")
+    async def r(self, i, b): await self.spin(i, "red")
+    @discord.ui.button(label="BLACK (2x)", style=discord.ButtonStyle.primary, emoji="⚫")
+    async def bl(self, i, b): await self.spin(i, "black")
+    @discord.ui.button(label="GREEN (14x)", style=discord.ButtonStyle.success, emoji="🟢")
+    async def g(self, i, b): await self.spin(i, "green")
+
+# ==========================================
+# 🎰 11. VIP SLOTS
+# ==========================================
+async def play_slots(interaction, bet):
+    embed = discord.Embed(title="🎰 VIP Slots", color=0x2b2d31, description="┏━━━┳━━━┳━━━┓\n┃ ⬛ ┃ ⬛ ┃ ⬛ ┃\n┗━━━┻━━━┻━━━┛\n*Spinning...*")
+    await interaction.followup.send(embed=embed) # Changed to followup due to defer
+    msg = await interaction.original_response()
+    await asyncio.sleep(1.5)
+    r = [random.choice(["🍒", "🍋", "🍇", "💎", "7️⃣"]) for _ in range(3)]
+    p = bet * 10 if r[0]==r[1]==r[2]=="7️⃣" else bet*5 if r[0]==r[1]==r[2]=="💎" else bet*3 if r[0]==r[1]==r[2] else int(bet*1.5) if (r[0]==r[1] or r[1]==r[2] or r[0]==r[2]) else 0
+    if p > 0: await update_balance(interaction, p)
+    res_str = f"┏━━━┳━━━┳━━━┓\n┃ {r[0]} ┃ {r[1]} ┃ {r[2]} ┃\n┗━━━┻━━━┻━━━┛"
+    embed.description, embed.color = f"{res_str}\n\n{'🎉 **Win:** A$ '+str(p)+',' if p>0 else '💀 **Bust.**'}\n🏦 **Balance:** A$ {get_balance(interaction.user.id):,}", (0xffd700 if p>bet else 0xff0000)
+    await msg.edit(embed=embed)
+
+# ==========================================
 # UI: MODAL & CENTRAL LOBBY
 # ==========================================
 class BetModal(discord.ui.Modal):
@@ -342,49 +465,68 @@ class BetModal(discord.ui.Modal):
     bet_amount = discord.ui.TextInput(label='Wager Amount (A$)', placeholder='e.g. 500', required=True, max_length=8)
 
     async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer() # THE FIX: Adds a 15-minute timeout window
+        
         try: bet = int(self.bet_amount.value.replace(',', ''))
-        except: return await interaction.response.send_message("❌ Numbers only.", ephemeral=True)
-        if bet <= 0: return await interaction.response.send_message("❌ Bet 1+.", ephemeral=True)
-        if bet > get_balance(interaction.user.id): return await interaction.response.send_message("❌ Insufficient Funds.", ephemeral=True)
+        except: return await interaction.followup.send("❌ Numbers only.", ephemeral=True)
+        if bet <= 0: return await interaction.followup.send("❌ Bet 1+.", ephemeral=True)
+        if bet > get_balance(interaction.user.id): return await interaction.followup.send("❌ Insufficient Funds.", ephemeral=True)
 
         await update_balance(interaction, -bet) # DEDUCT BET ONCE
 
-        # Game Router
-        if self.game_name == "Coinflip": await interaction.response.send_message(embed=discord.Embed(title="🪙 Coinflip", description=f"Bet: A$ {bet:,}. Choose below."), view=CoinflipView(interaction.user.id, bet))
+        # ALL 11 GAMES ROUTED using followup.send
+        if self.game_name == "Grid Mines":
+            await interaction.followup.send(embed=discord.Embed(title="💣 Athena Mines", description=f"**Wager:** A$ {bet:,}\nDon't hit the 3 bombs!"), view=MinesView(interaction.user.id, bet))
         elif self.game_name == "Blackjack (21)":
             v = BlackjackView(interaction.user.id, bet)
             if calc_score(v.p_hand) == 21:
                 await update_balance(interaction, int(bet*2.5))
                 for c in v.children: c.disabled = True
-                await interaction.response.send_message(embed=v.get_e(True, "🎉 **NATURAL BLACKJACK!**"), view=v)
-            else: await interaction.response.send_message(embed=v.get_e(), view=v)
+                await interaction.followup.send(embed=v.get_e(True, "🎉 **NATURAL BLACKJACK!**"), view=v)
+            else: await interaction.followup.send(embed=v.get_e(), view=v)
+        elif self.game_name == "Crypto Bull Run":
+            await interaction.followup.send(embed=discord.Embed(title="🚀 Market Dip Bought!", description=f"**Wager:** A$ {bet:,}\nClick **HOLD** to pump the multiplier!"), view=CryptoTraderView(interaction.user.id, bet))
+        elif self.game_name == "Roulette":
+            await interaction.followup.send(embed=discord.Embed(title="🎡 Table Open", description=f"**Bet:** A$ {bet:,}\nPick a color!"), view=RouletteView(interaction.user.id, bet))
+        elif self.game_name == "VIP Slots":
+            await play_slots(interaction, bet)
+        elif self.game_name == "Coinflip":
+            embed = discord.Embed(title="🪙 Coinflip", color=0x2b2d31, description=f"Wagered **A$ {bet:,}**.\nChoose **Heads** or **Tails** below.")
+            await interaction.followup.send(embed=embed, view=CoinflipView(interaction.user.id, bet))
         elif self.game_name == "Hi-Lo":
             v = HiLoView(interaction.user.id, bet)
-            await interaction.response.send_message(embed=discord.Embed(title="🃏 Hi-Lo", description=f"**Card:** {v.current_card}\nWill the next card be Higher or Lower?"), view=v)
+            await interaction.followup.send(embed=discord.Embed(title="🃏 Hi-Lo", description=f"**Card:** {v.current_card}\nWill the next card be Higher or Lower?"), view=v)
         elif self.game_name == "Shell Game":
-            await interaction.response.send_message(embed=discord.Embed(title="🥥 Shell Game", description=f"Bet: A$ {bet:,}. Find the diamond under the cups!"), view=ShellGameView(interaction.user.id, bet))
+            await interaction.followup.send(embed=discord.Embed(title="🥥 Shell Game", description=f"Bet: A$ {bet:,}. Find the diamond under the cups!"), view=ShellGameView(interaction.user.id, bet))
         elif self.game_name == "Horse Racing":
-            await interaction.response.send_message(embed=discord.Embed(title="🐎 Horse Racing", description=f"Bet: A$ {bet:,}. Pick your winning horse!"), view=HorseRaceView(interaction.user.id, bet))
+            await interaction.followup.send(embed=discord.Embed(title="🐎 Horse Racing", description=f"Bet: A$ {bet:,}. Pick your winning horse!"), view=HorseRaceView(interaction.user.id, bet))
         elif self.game_name == "Craps (Dice)":
-            await interaction.response.send_message(embed=discord.Embed(title="🎲 Craps", description=f"Bet: A$ {bet:,}. What will the two dice roll?"), view=DiceView(interaction.user.id, bet))
+            await interaction.followup.send(embed=discord.Embed(title="🎲 Craps", description=f"Bet: A$ {bet:,}. What will the two dice roll?"), view=DiceView(interaction.user.id, bet))
         elif self.game_name == "Baccarat":
-            await interaction.response.send_message(embed=discord.Embed(title="🏛️ Baccarat", description=f"Bet: A$ {bet:,}. Player or Banker?"), view=BaccaratView(interaction.user.id, bet))
-        else:
-            await interaction.response.send_message("🎰 **Slots / Roulette / Mines / Crypto coming in the next patch!** Try the new 5 games for now!")
+            await interaction.followup.send(embed=discord.Embed(title="🏛️ Baccarat", description=f"Bet: A$ {bet:,}. Player or Banker?"), view=BaccaratView(interaction.user.id, bet))
 
 class CasinoDropdown(discord.ui.Select):
     def __init__(self):
         options = [
-            discord.SelectOption(label='Hi-Lo', description='Guess the next card to build multipliers', emoji='🃏'),
-            discord.SelectOption(label='Horse Racing', description='Animated 4-horse race (Pays 3.5x)', emoji='🐎'),
-            discord.SelectOption(label='Baccarat', description='High roller Player vs Banker', emoji='🏛️'),
-            discord.SelectOption(label='Craps (Dice)', description='Roll 2 dice. Hit exactly 7 for 5x!', emoji='🎲'),
-            discord.SelectOption(label='Shell Game', description='Find the diamond under 3 cups', emoji='🥥'),
-            discord.SelectOption(label='Blackjack (21)', description='Classic 21 against Dealer', emoji='♠️'),
+            discord.SelectOption(label='Grid Mines', description='Interactive grid. Avoid bombs!', emoji='💣'),
+            discord.SelectOption(label='Blackjack (21)', description='Classic 21 against Dealer', emoji='🃏'),
+            discord.SelectOption(label='Crypto Bull Run', description='Hold for multipliers or crash', emoji='🚀'),
+            discord.SelectOption(label='Roulette', description='Red, Black, or Green', emoji='🎡'),
+            discord.SelectOption(label='VIP Slots', description='3-reel 10x jackpot slot', emoji='🎰'),
             discord.SelectOption(label='Coinflip', description='True heads or tails call', emoji='🪙'),
+            discord.SelectOption(label='Hi-Lo', description='Guess next card for multipliers', emoji='🔼'),
+            discord.SelectOption(label='Horse Racing', description='Animated 4-horse race (3.5x)', emoji='🐎'),
+            discord.SelectOption(label='Baccarat', description='High roller Player vs Banker', emoji='🏛️'),
+            discord.SelectOption(label='Craps (Dice)', description='Roll 2 dice. Hit exactly 7 for 5x', emoji='🎲'),
+            discord.SelectOption(label='Shell Game', description='Find diamond under 3 cups', emoji='🥥'),
         ]
         super().__init__(placeholder='Select a VIP table...', options=options)
     async def callback(self, i): await i.response.send_modal(BetModal(self.values[0]))
+
+class CasinoLobbyView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.add_item(CasinoDropdown())
 
 class Casino(commands.Cog):
     def __init__(self, bot): self.bot = bot
@@ -392,22 +534,15 @@ class Casino(commands.Cog):
     async def casino_lobby(self, interaction: discord.Interaction):
         embed = discord.Embed(title="🥂 The Grand Casino", color=0xffffff)
         embed.description = (
-            "Welcome to the high-roller tables.\n"
+            "Welcome to the high-roller tables, where fortunes are made and lost.\n"
             "Select a game from the dropdown below to place your wager.\n\n"
-            "__**NEW VIP TABLES**__\n\n"
-            "🃏 **Hi-Lo**\n└ *Guess if the next card is higher or lower to scale your multiplier!*\n\n"
-            "🐎 **Horse Racing**\n└ *Pick a horse. Watch the animated race. Pays 3.5x!*\n\n"
-            "🏛️ **Baccarat**\n└ *The Monaco classic. Bet on Player, Banker, or Tie (8x).* \n\n"
-            "🎲 **Craps (Dice)**\n└ *Roll the dice. Bet Under 7, Over 7, or EXACTLY 7 for a 5x payout!*\n\n"
-            "🥥 **Shell Game**\n└ *Find the hidden diamond under 3 cups for a 2.5x payout.* \n\n"
-            "__**CLASSIC TABLES**__\n"
-            "♠️ **Blackjack (21)** & 🪙 **Coinflip** are active."
+            "__**THE VIP TABLES**__\n"
+            "All 11 games are currently online and fully operational."
         )
         embed.set_thumbnail(url="https://media.tenor.com/fL4h-jO-aB8AAAAi/chips-poker.gif")
         embed.set_image(url="https://media.tenor.com/7H_I2t5fM6sAAAAC/casino-las-vegas.gif")
+        embed.set_footer(text="Gamble responsibly. The House always has the edge.")
         
-        v = discord.ui.View(timeout=None)
-        v.add_item(CasinoDropdown())
-        await interaction.response.send_message(embed=embed, view=v)
+        await interaction.response.send_message(embed=embed, view=CasinoLobbyView())
 
 async def setup(bot): await bot.add_cog(Casino(bot))
