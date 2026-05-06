@@ -15,6 +15,31 @@ CARD_TIERS = {
     "plat_pink": {"threshold": 600000, "file": "card_plat_pink.png", "color": (219, 120, 200), "name": "Platinum Chérie"}
 }
 
+# ==========================================
+# 📖 THE STAKING GUIDE UI
+# ==========================================
+class StakingGuideView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="How does Staking work?", style=discord.ButtonStyle.secondary, emoji="<a:wt_toronerd:1480580983593111602>")
+    async def guide_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        embed = discord.Embed(title="🏦 Athena Staking Guide", color=0xffffff)
+        embed.description = (
+            "**Staking** is a risk free way to grow your wealth over time.\n\n"
+            "**1. Lock Your Funds**\n"
+            "You deposit a set amount of A$ into the Central Reserve for a fixed period (3, 7, or 14 days). During this time, you cannot withdraw or wager this money.\n\n"
+            "**2. Guaranteed Yield**\n"
+            "Because you provided liquidity to the Reserve, you are paid a guaranteed high-interest yield when the lock period ends.\n"
+            "• **3 Days:** +15% Yield\n"
+            "• **7 Days:** +25% Yield\n"
+            "• **14 Days:** +60% Yield\n\n"
+            "**3. Claiming**\n"
+            "Once the time is up, use `/stake claim` to receive your original deposit PLUS the interest directly into your wallet!"
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
 class Economy(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -38,6 +63,11 @@ class Economy(commands.Cog):
         # Loans Table
         cursor.execute('''CREATE TABLE IF NOT EXISTS loans (
             user_id INTEGER PRIMARY KEY, amount INTEGER, due_date REAL
+        )''')
+        
+        # Stakes Table (NEW)
+        cursor.execute('''CREATE TABLE IF NOT EXISTS stakes (
+            user_id INTEGER PRIMARY KEY, amount INTEGER, unlock_time REAL, yield_rate REAL
         )''')
         
         # Exchange Rate Table
@@ -102,12 +132,12 @@ class Economy(commands.Cog):
         overdue_loans = cursor.fetchall()
 
         for user_id, amount in overdue_loans:
-            repayment = int(amount * 1.10) # 10% Interest Rate
+            repayment = int(amount * 1.15) # 15% Interest Rate
             cursor.execute("UPDATE wallets SET balance = balance - ? WHERE user_id = ?", (repayment, user_id))
             cursor.execute("DELETE FROM loans WHERE user_id = ?", (user_id,))
             try:
                 user = self.bot.get_user(user_id)
-                if user: await user.send(f"🏦 **LOAN COLLECTION:** The Central Reserve has forcibly deducted your overdue loan of **A$ {repayment:,}** (including 10% interest) from your account. If you lacked the funds, your account is now in the negative.")
+                if user: await user.send(f"🏦 **LOAN COLLECTION:** The Central Reserve has forcibly deducted your overdue loan of **A$ {repayment:,}** (including 15% interest) from your account. If you lacked the funds, your account is now in the negative.")
             except: pass
             
         conn.commit()
@@ -145,7 +175,10 @@ class Economy(commands.Cog):
         cursor.execute("UPDATE wallets SET active_card = ? WHERE user_id = ?", (card_type.value, interaction.user.id))
         conn.commit()
         conn.close()
-        await interaction.response.send_message(f"💳 **Card Equipped:** {CARD_TIERS[card_type.value]['name']}. Run `/bal`!")
+        
+        embed = discord.Embed(title="💳 Card Updated", color=0xffffff)
+        embed.description = f"You have equipped the **{CARD_TIERS[card_type.value]['name']}**.\nRun `/bal` to view it."
+        await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="give", description="Transfer Athena Coins to another user")
     async def give(self, interaction: discord.Interaction, user: discord.Member, amount: int):
@@ -164,7 +197,10 @@ class Economy(commands.Cog):
         cursor.execute("INSERT INTO wallets (user_id, balance, active_card, highest_balance) VALUES (?, ?, 'silver', ?) ON CONFLICT(user_id) DO UPDATE SET balance = balance + ?, highest_balance = MAX(highest_balance, balance + ?)", (user.id, amount, amount, amount, amount))
         conn.commit()
         conn.close()
-        await interaction.response.send_message(f"💸 **Wire Transfer Complete!**\nYou sent **A$ {amount:,}** to {user.mention}.")
+        
+        embed = discord.Embed(title="💸 Wire Transfer", color=0xffffff)
+        embed.description = f"Successfully transferred **A$ {amount:,}** to {user.mention}."
+        await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="loan", description="Take a loan from the Central Reserve (Max 7 days)")
     @app_commands.describe(amount="Amount to borrow (Max A$ 100,000)", days="Days until repayment (1-7)")
@@ -186,7 +222,101 @@ class Economy(commands.Cog):
         conn.close()
         
         embed = discord.Embed(title="🏦 Loan Approved", color=0xffffff)
-        embed.description = f"The Reserve credited **A$ {amount:,}** to your account.\n\n📅 **Due In:** {days} days\n💸 **Repayment:** A$ {int(amount*1.10):,} (10% Interest)\n*Note: This will be auto-deducted, even if it puts your account in the negative!*"
+        embed.description = f"The Reserve credited **A$ {amount:,}** to your account.\n\n📅 **Due In:** {days} days\n💸 **Repayment:** A$ {int(amount*1.10):,} (15% Interest)\n*Note: This will be auto-deducted, even if it puts your account in the negative!*"
+        await interaction.response.send_message(embed=embed)
+
+
+    # ==========================================
+    # 🏦 STAKING COMMANDS (NEW)
+    # ==========================================
+    stake_group = app_commands.Group(name="stake", description="Stake Athena Coins for guaranteed returns")
+
+    @stake_group.command(name="deposit", description="Lock A$ in the Reserve for guaranteed interest")
+    @app_commands.choices(duration=[
+        app_commands.Choice(name="3 Days (+15% Yield)", value=3),
+        app_commands.Choice(name="7 Days (+25% Yield)", value=7),
+        app_commands.Choice(name="14 Days (+60% Yield)", value=14)
+    ])
+    async def stake_deposit(self, interaction: discord.Interaction, amount: int, duration: app_commands.Choice[int]):
+        if amount < 100: return await interaction.response.send_message("❌ Minimum stake is A$ 100.", ephemeral=True)
+
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT amount FROM stakes WHERE user_id = ?", (interaction.user.id,))
+        if cursor.fetchone():
+            conn.close()
+            return await interaction.response.send_message("❌ You already have an active stake! Use `/stake info` to check it.", ephemeral=True)
+
+        cursor.execute("SELECT balance FROM wallets WHERE user_id = ?", (interaction.user.id,))
+        bal = cursor.fetchone()
+        if not bal or bal[0] < amount:
+            conn.close()
+            return await interaction.response.send_message("❌ Insufficient funds to stake.", ephemeral=True)
+
+        yield_rates = {3: 0.15, 7: 0.25, 14: 0.60}
+        rate = yield_rates[duration.value]
+        unlock = (datetime.datetime.now() + datetime.timedelta(days=duration.value)).timestamp()
+
+        cursor.execute("UPDATE wallets SET balance = balance - ? WHERE user_id = ?", (amount, interaction.user.id))
+        cursor.execute("INSERT INTO stakes (user_id, amount, unlock_time, yield_rate) VALUES (?, ?, ?, ?)", (interaction.user.id, amount, unlock, rate))
+        conn.commit()
+        conn.close()
+
+        embed = discord.Embed(title="Stake Deposited", color=0xffffff)
+        embed.description = f"Successfully locked **A$ {amount:,}** for **{duration.value} days**.\n\nExpected Return: **A$ {int(amount + (amount*rate)):,}**"
+        await interaction.response.send_message(embed=embed, view=StakingGuideView())
+
+    @stake_group.command(name="info", description="Check your current active stake")
+    async def stake_info(self, interaction: discord.Interaction):
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT amount, unlock_time, yield_rate FROM stakes WHERE user_id = ?", (interaction.user.id,))
+        row = cursor.fetchone()
+        conn.close()
+
+        if not row:
+            return await interaction.response.send_message("💼 You have no active stakes. Use `/stake deposit` to start earning!", view=StakingGuideView(), ephemeral=True)
+
+        amount, unlock, rate = row
+        payout = int(amount + (amount * rate))
+        now = datetime.datetime.now().timestamp()
+
+        embed = discord.Embed(title="Active Stake", color=0xffffff)
+        if now >= unlock:
+            embed.description = f"**Status:** 🟢 Ready to Claim!\n**Deposit:** A$ {amount:,}\n**Payout:** A$ {payout:,}\n\n*Run `/stake claim` to withdraw your funds.*"
+        else:
+            time_left = unlock - now
+            days, rem = divmod(time_left, 86400)
+            hours, rem = divmod(rem, 3600)
+            embed.description = f"**Status:** ⏳ Locked\n**Deposit:** A$ {amount:,}\n**Future Payout:** A$ {payout:,}\n**Time Remaining:** {int(days)}d {int(hours)}h"
+
+        await interaction.response.send_message(embed=embed, view=StakingGuideView())
+
+    @stake_group.command(name="claim", description="Claim a completed stake and collect your yield")
+    async def stake_claim(self, interaction: discord.Interaction):
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT amount, unlock_time, yield_rate FROM stakes WHERE user_id = ?", (interaction.user.id,))
+        row = cursor.fetchone()
+
+        if not row:
+            conn.close()
+            return await interaction.response.send_message("❌ You have no active stakes to claim.", ephemeral=True)
+
+        amount, unlock, rate = row
+        if datetime.datetime.now().timestamp() < unlock:
+            conn.close()
+            return await interaction.response.send_message("❌ Your stake is still locked! Use `/stake info` to check the remaining time.", ephemeral=True)
+
+        payout = int(amount + (amount * rate))
+        cursor.execute("DELETE FROM stakes WHERE user_id = ?", (interaction.user.id,))
+        cursor.execute("UPDATE wallets SET balance = balance + ?, highest_balance = MAX(highest_balance, balance + ?) WHERE user_id = ?", (payout, payout, interaction.user.id))
+        conn.commit()
+        conn.close()
+
+        embed = discord.Embed(title="🎉 Stake Claimed!", color=0xffd700) # Winning payout coloring
+        embed.description = f"Your lock period is over.\n\n**Initial Deposit:** A$ {amount:,}\n**Interest Earned:** A$ {payout - amount:,}\n**Total Added:** A$ {payout:,}"
         await interaction.response.send_message(embed=embed)
 
 
@@ -214,33 +344,28 @@ class Economy(commands.Cog):
             result = amount * rate
             desc = f"**A$ {amount:,}** × {rate} = **{result:,.2f} Mimu Coins**\n\n*Note: Athena coins will be deducted upon withdrawal.*"
             
-        embed = discord.Embed(title="💱 Currency Calculator", color=0xffffff, description=desc)
+        embed = discord.Embed(title="💱 Currency Calculator", color=0xffffff)
         await interaction.response.send_message(embed=embed)
 
     # ==========================================
-    # 💼 INCOME COMMANDS (WITH COOLDOWNS)
-    # ==========================================
-    # ==========================================
-    # 💼 INCOME COMMANDS (WITH COOLDOWNS)
+    # 💼 INCOME & RISK COMMANDS (WITH COOLDOWNS)
     # ==========================================
     @app_commands.command(name="daily", description="Claim your daily Athena Reserve allowance")
     @app_commands.checks.cooldown(1, 86400) # 24 Hours
     async def daily(self, interaction: discord.Interaction):
-        await interaction.response.defer() #homosexual men
-        
+        await interaction.response.defer() 
         payout = 5000
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         cursor.execute("INSERT INTO wallets (user_id, balance, active_card, highest_balance) VALUES (?, ?, 'silver', ?) ON CONFLICT(user_id) DO UPDATE SET balance = balance + ?, highest_balance = MAX(highest_balance, balance + ?)", (interaction.user.id, payout, payout, payout, payout))
         conn.commit()
         conn.close()
-        await interaction.followup.send(embed=discord.Embed(title="🎁 Daily Allowance", color=0xffffff, description=f"You claimed your daily **A$ {payout:,}**!"))
+        await interaction.followup.send(embed=discord.Embed(title="🎁 Daily Allowance", color=0xffd700, description=f"You claimed your daily **A$ {payout:,}**!"))
 
     @app_commands.command(name="work", description="Work a shift to earn some Athena Coins")
     @app_commands.checks.cooldown(1, 3600) # 1 Hour
     async def work(self, interaction: discord.Interaction):
         await interaction.response.defer() 
-        
         payout = random.randint(300, 1500)
         jobs = ["hacked a mainframe", "delivered pizzas in the rain", "cleaned the Athena databases", "won a local coding tournament", "investigated a cyber breach"]
         
@@ -249,7 +374,36 @@ class Economy(commands.Cog):
         cursor.execute("INSERT INTO wallets (user_id, balance, active_card, highest_balance) VALUES (?, ?, 'silver', ?) ON CONFLICT(user_id) DO UPDATE SET balance = balance + ?, highest_balance = MAX(highest_balance, balance + ?)", (interaction.user.id, payout, payout, payout, payout))
         conn.commit()
         conn.close()
-        await interaction.followup.send(embed=discord.Embed(title="💼 Shift Completed", color=0xffffff, description=f"You {random.choice(jobs)} and earned **A$ {payout:,}**!"))
+        await interaction.followup.send(embed=discord.Embed(title="💼 Shift Completed", color=0x00ff00, description=f"You {random.choice(jobs)} and earned **A$ {payout:,}**!"))
+
+    @app_commands.command(name="heist", description="Attempt a corporate heist for massive payouts. High Risk.")
+    @app_commands.checks.cooldown(1, 10800) # 3 Hours
+    async def heist(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        # Ensure user exists in DB before deducting or adding
+        cursor.execute("INSERT OR IGNORE INTO wallets (user_id, balance, active_card, highest_balance) VALUES (?, 0, 'silver', 0)", (interaction.user.id,))
+        
+        success = random.random() < 0.40 # 40% win chance
+        
+        if success:
+            winnings = 10000
+            cursor.execute("UPDATE wallets SET balance = balance + ?, highest_balance = MAX(highest_balance, balance + ?) WHERE user_id = ?", (winnings, winnings, interaction.user.id))
+            embed = discord.Embed(title="Heist Successful!", color=0x00ff00)
+            embed.description = f"You successfully breached a rival Megacorp's database and stole **A$ {winnings:,}**!"
+        else:
+            fine = 3000
+            cursor.execute("UPDATE wallets SET balance = balance - ? WHERE user_id = ?", (fine, interaction.user.id))
+            embed = discord.Embed(title="BUSTED!", color=0xff0000)
+            embed.description = f"Athena Security caught you. You were fined **A$ {fine:,}**.\n*(This will put you in debt if you lack the funds!)*"
+            
+        conn.commit()
+        conn.close()
+        await interaction.followup.send(embed=embed)
+
 
     # Cooldown Error Handler
     async def cog_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
@@ -291,7 +445,10 @@ class Economy(commands.Cog):
         bal = cursor.fetchone()[0]
         conn.commit()
         conn.close()
-        await interaction.response.send_message(f"🏦 **Bank Transfer Successful**\nAdded {amount:,} coins to {user.mention}.\nNew Balance: **A$ {bal:,}**")
+        
+        embed = discord.Embed(title="🏦 Bank Transfer Successful", color=0xffffff)
+        embed.description = f"Added {amount:,} coins to {user.mention}.\nNew Balance: **A$ {bal:,}**"
+        await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="deduct", description="ADMIN: Forcefully seize Athena coins from a user's wallet")
     async def deduct_coins(self, interaction: discord.Interaction, user: discord.Member, amount: int):
@@ -308,7 +465,9 @@ class Economy(commands.Cog):
         conn.commit()
         conn.close()
         
-        await interaction.response.send_message(f"🚨 **Assets Seized**\nSuccessfully deducted **A$ {amount:,}** from {user.mention}.\nNew Balance: **A$ {bal:,}**")
+        embed = discord.Embed(title="🚨 Assets Seized", color=0xffffff)
+        embed.description = f"Successfully deducted **A$ {amount:,}** from {user.mention}.\nNew Balance: **A$ {bal:,}**"
+        await interaction.response.send_message(embed=embed)
 
 async def setup(bot):
     await bot.add_cog(Economy(bot))

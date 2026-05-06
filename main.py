@@ -25,7 +25,7 @@ AUTO_REACTION_CHANNELS = {
     1273939292749561866,
     1273945454853492746   # channel ID 2
 }
-AUTO_REACTION_EMOJI = "<:w_happyhamster:1375541583298035892>"
+AUTO_REACTION_EMOJI = "<a:h_white4:1416368341244837979>"
 
 # Load cogs/extensions
 initial_extensions = [
