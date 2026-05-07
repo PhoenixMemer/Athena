@@ -2,92 +2,95 @@ import discord
 from discord.ext import commands
 import time
 import asyncio
+import sqlite3
 
 class AFK(commands.Cog):
     """AFK System"""
     
     def __init__(self, bot):
         self.bot = bot
-        self.afk_data = {}
+        self.db_path = "athena_core.db"
+        self.setup_db()
+        
+    def setup_db(self):
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('''CREATE TABLE IF NOT EXISTS afk (
+            user_id INTEGER PRIMARY KEY,
+            reason TEXT,
+            timestamp REAL
+        )''')
+        conn.commit()
+        conn.close()
     
     @commands.Cog.listener()
     async def on_message(self, message):
-        # Ignore messages from bots
         if message.author.bot:
             return
             
         user_id = message.author.id
         content = message.content.strip()
         
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
         # 1. Check if user is returning from AFK
-        if user_id in self.afk_data:
-            # We removed the > 3 length check. Now we just ensure it's not a command.
-            # We also check if they sent an attachment (like an image) as a sign of activity.
+        cursor.execute("SELECT timestamp FROM afk WHERE user_id = ?", (user_id,))
+        row = cursor.fetchone()
+        
+        if row:
             if (content and not content.startswith(('a.', 'a!', '/'))) or message.attachments:
-                afk_info = self.afk_data[user_id]
-                afk_time = int(time.time() - afk_info["timestamp"])
-                
+                afk_time = int(time.time() - row[0])
                 hours, remainder = divmod(afk_time, 3600)
                 minutes, seconds = divmod(remainder, 60)
                 
-                if hours > 0:
-                    time_str = f"{hours}h {minutes}m {seconds}s"
-                elif minutes > 0:
-                    time_str = f"{minutes}m {seconds}s"
-                else:
-                    time_str = f"{seconds}s"
+                time_str = f"{hours}h {minutes}m {seconds}s" if hours > 0 else f"{minutes}m {seconds}s" if minutes > 0 else f"{seconds}s"
                 
-                # Instantly remove them from the dictionary so the logic feels fast
-                del self.afk_data[user_id]
+                cursor.execute("DELETE FROM afk WHERE user_id = ?", (user_id,))
+                conn.commit()
                 
-                # Send the welcome back message as a background task to prevent API blocking
                 asyncio.create_task(
                     message.channel.send(
-                        f"{message.author.mention} 𝘳𝘦𝘵𝘶𝘳𝘯𝘴 𝘧𝘳𝘰𝘮 𝘵𝘩𝘦 𝘢𝘣𝘺𝘴𝘴..𝘺𝘰𝘶𝘳 𝘈𝘍𝘒 𝘴𝘵𝘢𝘵𝘶𝘴 𝘩𝘢𝘴 𝘣𝘦𝘦𝘯 𝘳𝘦𝘮𝘰𝘷𝘦𝘥. "
-                        f"(𝘠𝘰𝘶 𝘸𝘦𝘳𝘦 𝘢𝘸𝘢𝘺 𝘧𝘰𝘳 {time_str})"
+                        f"{message.author.mention} 𝑟𝑒𝑡𝑢𝑟𝑛𝑠 𝑓𝑟𝑜𝑚 𝑡ℎ𝑒 𝑎𝑏𝑦𝑠𝑠 𝑎𝑓𝑡𝑒𝑟 {time_str} . . . 𝑦𝑜𝑢𝑟 𝑎𝑓𝑘 𝑠𝑡𝑎𝑡𝑢𝑠 ℎ𝑎𝑠 𝑏𝑒𝑒𝑛 𝑟𝑒𝑚𝑜𝑣𝑒𝑑."
                     )
                 )
         
         # 2. Check if message mentions any AFK users
         if message.mentions:
-            for member in message.mentions:
-                if member.id in self.afk_data and member.id != user_id:
-                    afk_info = self.afk_data[member.id]
-                    afk_time = int(time.time() - afk_info["timestamp"])
+            mentioned_ids = [m.id for m in message.mentions if m.id != user_id]
+            if mentioned_ids:
+                placeholders = ','.join('?' * len(mentioned_ids))
+                cursor.execute(f"SELECT user_id, reason, timestamp FROM afk WHERE user_id IN ({placeholders})", mentioned_ids)
+                
+                for m_id, reason, timestamp in cursor.fetchall():
+                    member = message.guild.get_member(m_id) if message.guild else None
+                    name = member.display_name if member else "A user"
                     
+                    afk_time = int(time.time() - timestamp)
                     hours, remainder = divmod(afk_time, 3600)
                     minutes, seconds = divmod(remainder, 60)
                     
-                    if hours > 0:
-                        time_str = f"{hours}h {minutes}m"
-                    elif minutes > 0:
-                        time_str = f"{minutes}m {seconds}s"
-                    else:
-                        time_str = f"just a moment"
+                    time_str = f"{hours}h {minutes}m" if hours > 0 else f"{minutes}m {seconds}s" if minutes > 0 else "just a moment"
                     
-                    # Send ping notification in the background
                     asyncio.create_task(
                         message.reply(
-                            f"**{member.display_name}** 𝑖𝑠 𝑐𝑢𝑟𝑟𝑒𝑛𝑡𝑙𝑦 𝐴𝐹𝐾: {afk_info['reason']} "
+                            f"**{name}** 𝑖𝑠 𝑐𝑢𝑟𝑟𝑒𝑛𝑡𝑙𝑦 𝐴𝐹𝐾: {reason} "
                             f"(𝐴𝐹𝐾 𝑓𝑜𝑟 {time_str})",
                             mention_author=False
                         )
                     )
+        conn.close()
     
     @commands.command(name='afk', aliases=['away'], help='Set your status as AFK with an optional reason')
     async def afk(self, ctx, *, reason="No reason provided"):
-        """Set AFK status"""
-        user_id = ctx.author.id
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("INSERT OR REPLACE INTO afk (user_id, reason, timestamp) VALUES (?, ?, ?)", 
+                      (ctx.author.id, reason, time.time()))
+        conn.commit()
+        conn.close()
         
-        self.afk_data[user_id] = {
-            "reason": reason,
-            "timestamp": time.time()
-        }
-        
-        # Pushed to a background task so the command finishes instantly
-        asyncio.create_task(
-            ctx.send(f"{ctx.author.mention} 𝐷𝑒𝑎𝑟, 𝐼'𝑣𝑒 𝑠𝑒𝑡 𝑦𝑜𝑢𝑟 𝑠𝑡𝑎𝑡𝑢𝑠 𝑡𝑜 𝐴𝐹𝐾: {reason}")
-        )
+        asyncio.create_task(ctx.send(f"{ctx.author.mention} 𝐷𝑒𝑎𝑟, 𝐼'𝑣𝑒 𝑠𝑒𝑡 𝑦𝑜𝑢𝑟 𝑠𝑡𝑎𝑡𝑢𝑠 𝑡𝑜 𝐴𝐹𝐾: {reason}"))
 
 async def setup(bot):
     await bot.add_cog(AFK(bot))

@@ -38,6 +38,7 @@ initial_extensions = [
     'cogs.economy',#a72424
     'cogs.casino',
     'cogs.invest',
+    'cogs.marketplace',
     'cogs.cupid_blacklist'
 ]
 
@@ -92,7 +93,7 @@ async def on_ready():
         print(f"  - {command.name}")
     
     # Set custom status
-    activity = discord.Streaming(name="Playing Pokemon GO!", url="https://twitch.tv/twitch")
+    activity = discord.Streaming(name="Studying War Strategy", url="https://twitch.tv/twitch")
     await bot.change_presence(activity=activity, status=discord.Status.online)
     print(f'Custom status set: {activity.type.name} {activity.name}')
 
@@ -115,77 +116,71 @@ async def on_message(message):
     await bot.process_commands(message)
 
 # Help command (since we removed the default one)
-@bot.command(name='help', aliases=['commands', 'h'], help='Show all available commands')
+@bot.command(name="help")
 async def help_command(ctx):
-    """Display a beautiful embed with all commands using custom emojis"""
-    # Use your custom emoji names (replace with your actual emoji names)
-    embed = discord.Embed(
-        title=f"𝐴𝑡ℎ𝑒𝑛𝑎 𝐶𝑜𝑚𝑚𝑎𝑛𝑑 𝑀𝑒𝑛𝑢",
-        description=" ",
-        color=0xffffff  # Pure white
-    )
-    
+    embed = discord.Embed(title="𝐴𝑡ℎ𝑒𝑛𝑎 𝐶𝑜𝑚𝑚𝑎𝑛𝑑 𝑀𝑒𝑛𝑢", color=0xffffff)
+
     # Utility Commands
     utility_commands = """
-    <:p_hearts:1378053399525982288> `ping` - Check bot latency
-    <:p_hearts:1378053399525982288> `afk` - Set your status as AFK
-    <:p_hearts:1378053399525982288> `remind` - Set a reminder (e.g., `a.remind 1h30m Buy milk`)
-    <:p_hearts:1378053399525982288> `reminders` - List your active reminders
-    <:p_hearts:1378053399525982288> `removereminder` - Remove a reminder by ID
-    <:p_hearts:1378053399525982288> `vanityinfo` - Show members with vanity role
-    """
+<:p_hearts:1378053399525982288> `ping` - Check bot latency
+<:p_hearts:1378053399525982288> `afk` - Set your status as AFK
+<:p_hearts:1378053399525982288> `remind` - Set a reminder (e.g., a.remind 1h30m Buy milk)
+<:p_hearts:1378053399525982288> `reminders` - List your active reminders
+<:p_hearts:1378053399525982288> `removereminder` - Remove a reminder by ID
+<:p_hearts:1378053399525982288> `vanityinfo` - Show members with vanity role
+"""
     embed.add_field(name="<:s_white2:1382052523166142486> Utility Commands", value=utility_commands, inline=False)
-    
-    # Fun & Social Commands
-    fun_commands = """
-    <:p_hearts:1378053399525982288> `compat` - Check compatibility between users
-    <:p_hearts:1378053399525982288> `love` - Love calculator between users  
-    <:p_hearts:1378053399525982288> `mbti` - Get personality insights
-    <:p_hearts:1378053399525982288> `romantic` - Detailed romantic compatibility
-    """
-    embed.add_field(name="<:s_white2:1382052523166142486> Social Commands", value=fun_commands, inline=False)
 
-    # Vanity System Info
-    vanity_info = """
-    <:p_hearts:1378053399525982288> Rep **/cheriies** in your status to get:
-    • Special vanity role 
-    • Recognition in the community
-    • Exclusive perks!
-    """
-    embed.add_field(name="<:s_white2:1382052523166142486> Vanity System", value=vanity_info, inline=False)
-    
+    # Social Commands
+    social_commands = """
+<:p_hearts:1378053399525982288> `compat` - Check compatibility between users
+<:p_hearts:1378053399525982288> `love` - Love calculator between users
+<:p_hearts:1378053399525982288> `mbti` - Get personality insights
+<:p_hearts:1378053399525982288> `romantic` - Detailed romantic compatibility
+"""
+    embed.add_field(name="<:s_white2:1382052523166142486> Social Commands", value=social_commands, inline=False)
+
+    # Vanity System
+    vanity_text = """
+<:p_hearts:1378053399525982288> Rep `/cheriies` in your status to get:
+• Special vanity role
+• Recognition in the community
+• Exclusive perks!
+"""
+    embed.add_field(name="<:s_white2:1382052523166142486> Vanity System", value=vanity_text, inline=False)
+
+    # NEW: Economy Commands
+    economy_commands = """
+<:p_hearts:1378053399525982288> `bal` - Check your wallet & card
+<:p_hearts:1378053399525982288> `work` - Earn coins (Commute bonus applies)
+<:p_hearts:1378053399525982288> `daily` - Claim your daily allowance
+<:p_hearts:1378053399525982288> `give` - Transfer coins to another user
+<:p_hearts:1378053399525982288> `loan` - Take a loan from the Reserve
+<:p_hearts:1378053399525982288> `stake` - Lock capital for high yields
+<:p_hearts:1378053399525982288> `invest` - Buy/Sell stocks & view yields
+<:p_hearts:1378053399525982288> `marketplace` - Buy houses & luxury cars
+<:p_hearts:1378053399525982288> `garage` - View your vehicle collection
+<:p_hearts:1378053399525982288> `networth` - Total valuation of your empire
+<:p_hearts:1378053399525982288> `leaderboard` - Top 10 wealthiest users
+<:p_hearts:1378053399525982288> `casino` - Access 11 VIP gambling tables
+<:p_hearts:1378053399525982288> `convert` - Mimu to Athena calculator
+"""
+    embed.add_field(name="<:s_white2:1382052523166142486> Economy Commands", value=economy_commands, inline=False)
+
     # Staff Commands
-    fun_commands = """
-    <:p_hearts:1378053399525982288> `createprofile` - Create your mod user profile
-    <:p_hearts:1378053399525982288> `deleteprofile` - Delete your mod user profile  
-    <:p_hearts:1378053399525982288> `training` - Begin your staff training modules
-    <:p_hearts:1378053399525982288> `strike` - Issue formal strike to staff
-    <:p_hearts:1378053399525982288> `modinfo` - View detailed moderator info
-    <:p_hearts:1378053399525982288> `loa` - Toggle your LOA status on/off
-    <:p_hearts:1378053399525982288> `setrank` - Update rank of staff
-    <:p_hearts:1378053399525982288> `reset_training` - Delete old training data for a mod
-    <:p_hearts:1378053399525982288> `faq`- Check out frequently answered questions by mods
-    <:p_hearts:1378053399525982288> `staffview` - View all current staff
-    <:p_hearts:1378053399525982288> `commend` - Commend a mod for excellent work
-    <:p_hearts:1378053399525982288> `staffview` - View all current staff
-    """
-    embed.add_field(name="<:s_white2:1382052523166142486> Staff Commands", value=fun_commands, inline=False)
+    staff_commands = """
+<:p_hearts:1378053399525982288> `createprofile` - Create your mod user profile
+<:p_hearts:1378053399525982288> `training` - Begin your staff training modules
+<:p_hearts:1378053399525982288> `modinfo` - View detailed moderator info
+<:p_hearts:1378053399525982288> `loa` - Toggle your LOA status on/off
+<:p_hearts:1378053399525982288> `staffview` - View all current staff
+<:p_hearts:1378053399525982288> `commend` - Commend a mod for excellent work
+"""
+    embed.add_field(name="<:s_white2:1382052523166142486> Staff Commands", value=staff_commands, inline=False)
 
-        # Cupid Commands
-    fun_commands = """
-    <:p_hearts:1378053399525982288> `analayze_match` - Analyse two user profiles
-    <:p_hearts:1378053399525982288> `add_synonym` - Add word(s) to Athena's matchmaking database  
-    <:p_hearts:1378053399525982288> `blacklist_add` - Prevent a user from accessing matchmaking channels
-    """
-    embed.add_field(name="<:s_white2:1382052523166142486> Cupid Commands", value=fun_commands, inline=False)
-    
-    # Set footer with timestamp
-    embed.set_footer(text="Use command prefixes: a. or a!")
-    embed.timestamp = discord.utils.utcnow()
-    
+    embed.set_footer(text="Athena v14.9 | Use slash commands or a. prefix")
     await ctx.send(embed=embed)
 
-# Ping command (since it's not in any cog)
 @bot.command(name='ping', aliases=['p'], help='Responds with Pong! and latency')
 async def ping(ctx):
     latency = round(bot.latency * 1000)  # Latency in milliseconds

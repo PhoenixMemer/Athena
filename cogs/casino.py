@@ -445,15 +445,20 @@ class RouletteView(discord.ui.View):
 # ==========================================
 async def play_slots(interaction, bet):
     embed = discord.Embed(title="🎰 VIP Slots", color=0x2b2d31, description="┏━━━┳━━━┳━━━┓\n┃ ⬛ ┃ ⬛ ┃ ⬛ ┃\n┗━━━┻━━━┻━━━┛\n*Spinning...*")
-    await interaction.followup.send(embed=embed) # Changed to followup due to defer
-    msg = await interaction.original_response()
+    
+    # FIX: Edit the deferred response directly instead of creating a new followup
+    await interaction.edit_original_response(embed=embed)
     await asyncio.sleep(1.5)
+    
     r = [random.choice(["🍒", "🍋", "🍇", "💎", "7️⃣"]) for _ in range(3)]
     p = bet * 10 if r[0]==r[1]==r[2]=="7️⃣" else bet*5 if r[0]==r[1]==r[2]=="💎" else bet*3 if r[0]==r[1]==r[2] else int(bet*1.5) if (r[0]==r[1] or r[1]==r[2] or r[0]==r[2]) else 0
+    
     if p > 0: await update_balance(interaction, p)
     res_str = f"┏━━━┳━━━┳━━━┓\n┃ {r[0]} ┃ {r[1]} ┃ {r[2]} ┃\n┗━━━┻━━━┻━━━┛"
     embed.description, embed.color = f"{res_str}\n\n{'🎉 **Win:** A$ '+str(p)+',' if p>0 else '💀 **Bust.**'}\n🏦 **Balance:** A$ {get_balance(interaction.user.id):,}", (0xffd700 if p>bet else 0xff0000)
-    await msg.edit(embed=embed)
+    
+    # Edit the exact same message to show the final result
+    await interaction.edit_original_response(embed=embed)
 
 # ==========================================
 # UI: MODAL & CENTRAL LOBBY
