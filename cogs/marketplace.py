@@ -50,7 +50,7 @@ class BuyOptionButton(discord.ui.Button):
             c.execute("INSERT INTO user_properties (user_id, property_id, quality, needs_repair) VALUES (?, ?, 20, 0)", (i.user.id, self.item_id))
             conn.commit()
             conn.close()
-            await i.response.send_message(embed=discord.Embed(title="📜 Deed Acquired", description=f"You now own **{prop[0]}**!", color=0xffffff), ephemeral=True)
+            await i.response.send_message(embed=discord.Embed(title="📜 Deed Acquired", description=f"You now own **{prop[0]}**!", color=0xffffff), ephemeral=False)
 
         elif self.item_type == "vehicle":
             c.execute("SELECT name, price FROM market_vehicles WHERE id = ?", (self.item_id,))
@@ -72,7 +72,7 @@ class BuyOptionButton(discord.ui.Button):
             c.execute("INSERT INTO user_vehicles (user_id, vehicle_id, needs_repair) VALUES (?, ?, 0)", (i.user.id, self.item_id))
             conn.commit()
             conn.close()
-            await i.response.send_message(embed=discord.Embed(title="<:car_athena:1501939281479073842> Keys Handed Over", description=f"You purchased a **{veh[0]}**!", color=0xffffff), ephemeral=True)
+            await i.response.send_message(embed=discord.Embed(title="<:car_athena:1501939281479073842> Keys Handed Over", description=f"You purchased a **{veh[0]}**!", color=0xffffff), ephemeral=False)
 
         elif self.item_type == "p2p":
             lid = int(self.item_id)
@@ -96,7 +96,7 @@ class BuyOptionButton(discord.ui.Button):
             conn.commit()
             conn.close()
             
-            await i.response.send_message(embed=discord.Embed(title="🤝 P2P Purchase Complete", description=f"You purchased listing #{lid} for **A$ {listing[2]:,}**!", color=0xffffff), ephemeral=True)
+            await i.response.send_message(embed=discord.Embed(title="🤝 P2P Purchase Complete", description=f"You purchased listing #{lid} for **A$ {listing[2]:,}**!", color=0xffffff), ephemeral=False)
 
 
 # ==========================================

@@ -338,7 +338,8 @@ class ModTraining(commands.Cog):
     async def createprofile(self, interaction: discord.Interaction, user: discord.Member):
         # 1. DEFER FIRST: Tell Discord to give us time to process
         await interaction.response.defer(ephemeral=False)
-        
+        if user.bot:
+            return await interaction.response.send_message("❌ You cannot create a profile for a bot.", ephemeral=True)
         conn = sqlite3.connect("modsVSC.db")
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM mod_profiles WHERE user_id = ?", (user.id,))

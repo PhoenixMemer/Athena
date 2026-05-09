@@ -38,6 +38,7 @@ initial_extensions = [
     'cogs.economy',#a72424
     'cogs.casino',
     'cogs.invest',
+    'cogs.cupid_dashboard',
     'cogs.marketplace',
     'cogs.cupid_blacklist'
 ]
