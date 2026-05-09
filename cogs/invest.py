@@ -52,14 +52,15 @@ class Investments(commands.Cog):
         try: cursor.execute("ALTER TABLE portfolio ADD COLUMN average_buy_price REAL DEFAULT 0")
         except: pass
         
-        cursor.execute("SELECT COUNT(*) FROM stocks")
-        if cursor.fetchone()[0] == 0:
-            stocks = [
-                ('CRV', 'Central Reserve Bonds', 1000, 3, '➖ FLAT'),  
-                ('TEC', 'Athena Tech Sector', 5000, 15, '➖ FLAT'),    
-                ('MIMU', 'Mimu Crypto Trust', 500, 45, '➖ FLAT')     
-            ]
-            cursor.executemany("INSERT INTO stocks VALUES (?, ?, ?, ?, ?)", stocks)
+        # Injects the new stocks (ARE and PAL) into your existing database!
+        new_stocks = [
+            ('CRV', 'Central Reserve Bonds', 1000, 3, '➖ FLAT'),  
+            ('TEC', 'Athena Tech Sector', 5000, 15, '➖ FLAT'),    
+            ('MIMU', 'Mimu Crypto Trust', 500, 45, '➖ FLAT'),
+            ('ARE', 'Athena Real Estate', 2500, 10, '➖ FLAT'),
+            ('PAL', 'Palantir Analytics', 8000, 25, '➖ FLAT')
+        ]
+        cursor.executemany("INSERT OR IGNORE INTO stocks (symbol, name, price, volatility, trend) VALUES (?, ?, ?, ?, ?)", new_stocks)
             
         conn.commit()
         conn.close()
@@ -96,6 +97,8 @@ class Investments(commands.Cog):
             yield_rate = 0.02 
             if sym == 'CRV': yield_rate = 0.01  
             elif sym == 'MIMU': yield_rate = 0.05 
+            elif sym == 'ARE': yield_rate = 0.03
+            elif sym == 'PAL': yield_rate = 0.04
 
             payout = int((shares * price) * yield_rate)
             user_payouts[uid] = user_payouts.get(uid, 0) + payout
@@ -157,7 +160,7 @@ class Investments(commands.Cog):
         embed = discord.Embed(title="📊 Athena Stock Exchange", color=0xffffff, description="*Prices fluctuate naturally every 2 hours based on asset volatility. Dividends are paid every 24H.*")
         for sym, name, price, trend, vol in stocks:
             risk = "🟢 Low" if vol <= 5 else "🟡 Med" if vol <= 20 else "🔴 High"
-            div = "1%" if sym == "CRV" else "5%" if sym == "MIMU" else "2%"
+            div = "1%" if sym == "CRV" else "5%" if sym == "MIMU" else "3%" if sym == "ARE" else "4%" if sym == "PAL" else "2%"
             
             embed.add_field(
                 name=f"{name} ({sym})", 

@@ -48,9 +48,14 @@ class BuyOptionButton(discord.ui.Button):
                 
             c.execute("UPDATE wallets SET balance = balance - ? WHERE user_id = ?", (prop[1], i.user.id))
             c.execute("INSERT INTO user_properties (user_id, property_id, quality, needs_repair) VALUES (?, ?, 20, 0)", (i.user.id, self.item_id))
+            
+            # --- MARKET LINKAGE: Real Estate Boom ---
+            try: c.execute("UPDATE stocks SET price = price + int(price * 0.02), trend = '📈 UP' WHERE symbol = 'ARE'")
+            except: pass
+
             conn.commit()
             conn.close()
-            await i.response.send_message(embed=discord.Embed(title="📜 Deed Acquired", description=f"You now own **{prop[0]}**!", color=0xffffff), ephemeral=False)
+            await i.response.send_message(embed=discord.Embed(title="📜 Deed Acquired", description=f"You now own **{prop[0]}**!\n\n📈 *The real estate market is booming! Your purchase just drove up the price of `ARE` stock!*", color=0xffffff), ephemeral=True)
 
         elif self.item_type == "vehicle":
             c.execute("SELECT name, price FROM market_vehicles WHERE id = ?", (self.item_id,))
@@ -72,7 +77,7 @@ class BuyOptionButton(discord.ui.Button):
             c.execute("INSERT INTO user_vehicles (user_id, vehicle_id, needs_repair) VALUES (?, ?, 0)", (i.user.id, self.item_id))
             conn.commit()
             conn.close()
-            await i.response.send_message(embed=discord.Embed(title="<:car_athena:1501939281479073842> Keys Handed Over", description=f"You purchased a **{veh[0]}**!", color=0xffffff), ephemeral=False)
+            await i.response.send_message(embed=discord.Embed(title="<:car_athena:1501939281479073842> Keys Handed Over", description=f"You purchased a **{veh[0]}**!", color=0xffffff), ephemeral=True)
 
         elif self.item_type == "p2p":
             lid = int(self.item_id)
@@ -93,10 +98,15 @@ class BuyOptionButton(discord.ui.Button):
             c.execute("UPDATE wallets SET balance = balance - ? WHERE user_id = ?", (listing[2], i.user.id))
             c.execute("INSERT INTO user_properties (user_id, property_id, quality, needs_repair) VALUES (?, ?, 100, 0)", (i.user.id, listing[1]))
             c.execute("DELETE FROM p2p_listings WHERE id = ?", (lid,))
+
+            # --- MARKET LINKAGE: Minor Real Estate Bump ---
+            try: c.execute("UPDATE stocks SET price = price + int(price * 0.01), trend = '📈 UP' WHERE symbol = 'ARE'")
+            except: pass
+
             conn.commit()
             conn.close()
             
-            await i.response.send_message(embed=discord.Embed(title="🤝 P2P Purchase Complete", description=f"You purchased listing #{lid} for **A$ {listing[2]:,}**!", color=0xffffff), ephemeral=False)
+            await i.response.send_message(embed=discord.Embed(title="🤝 P2P Purchase Complete", description=f"You purchased listing #{lid} for **A$ {listing[2]:,}**!\n\n📈 *This private transfer drove up the price of `ARE` stock!*", color=0xffffff), ephemeral=True)
 
 
 # ==========================================
