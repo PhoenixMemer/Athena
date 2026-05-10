@@ -3,6 +3,8 @@ import sys
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
+from typing import Literal
+from discord import app_commands
 # Mobile Sync Test - April 2026
 
 # Load environment variables
@@ -186,6 +188,42 @@ async def help_command(ctx):
 async def ping(ctx):
     latency = round(bot.latency * 1000)  # Latency in milliseconds
     await ctx.send(f'Pong! Latency: {latency}ms')
+
+
+
+
+
+@bot.tree.command(name="setstatus", description="HIGH STAFF: Change Athena's live Discord status")
+@app_commands.describe(
+    activity_type="Choose the type of activity",
+    status_text="The text to display (e.g. 'with your heart')",
+    stream_url="Optional: Only used for 'Streaming' type"
+)
+async def set_status(
+    interaction: discord.Interaction, 
+    activity_type: Literal["Playing", "Streaming", "Listening", "Watching"], 
+    status_text: str, 
+    stream_url: str = "https://twitch.tv/twitch"
+):
+    # Security check: Only Phoenix and Head Staff can change status
+    AUTHORIZED = [743411894416834590, 866380792728387584, 906142971588640768, 860192411627552788] # Replace with actual IDs
+    if interaction.user.id not in AUTHORIZED:
+        return await interaction.response.send_message("<a:wt_torono:1480580892706603018> Unauthorized access to system appearance.", ephemeral=True)
+
+    # Apply the correct Discord Activity formatting
+    if activity_type == "Playing":
+        activity = discord.Game(name=status_text)
+    elif activity_type == "Streaming":
+        activity = discord.Streaming(name=status_text, url=stream_url)
+    elif activity_type == "Listening":
+        activity = discord.Activity(type=discord.ActivityType.listening, name=status_text)
+    elif activity_type == "Watching":
+        activity = discord.Activity(type=discord.ActivityType.watching, name=status_text)
+
+    # Push the status to Discord instantly
+    await bot.change_presence(activity=activity, status=discord.Status.online)
+    await interaction.response.send_message(f"Athena's presence updated to: **{activity_type} {status_text}**", ephemeral=False)
+
 
 # Run the bot
 if __name__ == "__main__":
