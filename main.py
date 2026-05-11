@@ -25,6 +25,7 @@ bot.remove_command('help')  # Remove default help command
 AUTO_REACTION_CHANNELS = {
     1273939243600842795,  # channel ID 1
     1273939292749561866,
+    1462901038364229865,
     1273945454853492746   # channel ID 2
 }
 AUTO_REACTION_EMOJI = "<a:h_white4:1416368341244837979>"
@@ -37,10 +38,12 @@ initial_extensions = [
     'cogs.vanity',
     'cogs.cupid_engine',
     'cogs.mod_training',
-    'cogs.economy',#a72424
+    'cogs.economy',
     'cogs.casino',
     'cogs.business',
     'cogs.invest',
+    'cogs.business',
+    'cogs.careers',
     'cogs.cupid_dashboard',
     'cogs.marketplace',
     'cogs.cupid_blacklist'
@@ -97,7 +100,7 @@ async def on_ready():
         print(f"  - {command.name}")
     
     # Set custom status
-    activity = discord.Streaming(name="Studying War Strategy", url="https://twitch.tv/twitch")
+    activity = discord.Streaming(name="Under Maintenance 🚧", url="https://twitch.tv/twitch")
     await bot.change_presence(activity=activity, status=discord.Status.online)
     print(f'Custom status set: {activity.type.name} {activity.name}')
 
@@ -182,7 +185,7 @@ async def help_command(ctx):
 """
     embed.add_field(name="<:s_white2:1382052523166142486> Staff Commands", value=staff_commands, inline=False)
 
-    embed.set_footer(text="Athena v14.9 | Use slash commands or a. prefix")
+    embed.set_footer(text="Athena v16.3 UNSTABLE | Use slash commands or a. prefix")
     await ctx.send(embed=embed)
 
 @bot.command(name='ping', aliases=['p'], help='Responds with Pong! and latency')
