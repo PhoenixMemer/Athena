@@ -1,0 +1,26 @@
+@app_commands.command(name="work", description="Work a shift to earn some Athena Coins")
+    @app_commands.checks.cooldown(1, 3600) # 1 Hour
+    async def work(self, interaction: discord.Interaction):
+        await interaction.response.defer() 
+        
+        _, active_card = self.get_wallet_data(interaction.user.id)
+        
+        # Tiered Payout Multipliers (UPDATED)
+        mults = {"silver": 1.0, "gold": 1.9, "crystal": 2.5, "plat_black": 4.5, "plat_pink": 4.5}
+        mult = mults.get(active_card, 1.0)
+        
+        base_payout = random.randint(1100, 2500)
+        payout = int(base_payout * mult)
+        
+        jobs = ["hacked a mainframe", "delivered pizzas in the rain", "cleaned the Athena databases", "defeated Nami in a fight", "investigated the Cupids for corruption", "stopped a raid with the Mods", "won a swearing contest against Kody", "exposed Elysia's drug trafficking", "won a Minecraft building tournament against Nova", "carried out airstrikes against Iranian targets"]
+        
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO wallets (user_id, balance, active_card, highest_balance) VALUES (?, ?, 'silver', ?) ON CONFLICT(user_id) DO UPDATE SET balance = balance + ?, highest_balance = MAX(highest_balance, balance + ?)", (interaction.user.id, payout, payout, payout, payout))
+        conn.commit()
+        conn.close()
+        
+        card_name = CARD_TIERS[active_card]["name"]
+        embed = discord.Embed(title="Shift Completed", color=0xffffff)
+        embed.description = f"You {random.choice(jobs)} and earned **A$ {payout:,}**!\n*(Includes {mult}x multiplier from your {card_name})*"
+        await interaction.followup.send(embed=embed)
