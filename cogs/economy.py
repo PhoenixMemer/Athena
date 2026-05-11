@@ -8,6 +8,17 @@ import random
 import datetime
 from PIL import Image, ImageDraw, ImageFont
 
+DB_PATH = "economy.db"
+def get_db_connection():
+    # Adding a 20-second timeout gives tasks time to wait for a lock to release
+    conn = sqlite3.connect(DB_PATH, timeout=20, isolation_level=None)
+    # These lines fix "database is locked" and Wispbyte storage issues
+    conn.execute('PRAGMA journal_mode=WAL;') 
+    conn.execute('PRAGMA temp_store = MEMORY;')
+    conn.execute('PRAGMA synchronous = NORMAL;')
+    return conn
+
+
 CARD_TIERS = {
     "silver": {"threshold": 0, "file": "card_silver.png", "color": (255, 255, 255), "name": "Standard Silver"},
     "gold": {"threshold": 100000, "file": "card_gold.png", "color": (255, 255, 255), "name": "Gold Elite"},
@@ -54,7 +65,7 @@ class EarlyClaimView(discord.ui.View):
         penalty_fee = int(self.amount * 0.15)
         payout = self.amount - penalty_fee
 
-        conn = sqlite3.connect(self.db_path)
+        conn = get_db_connection()(self.db_path)
         cursor = conn.cursor()
         cursor.execute("DELETE FROM stakes WHERE user_id = ?", (self.user_id,))
         cursor.execute("UPDATE wallets SET balance = balance + ?, highest_balance = MAX(highest_balance, balance + ?) WHERE user_id = ?", (payout, payout, self.user_id))
@@ -90,7 +101,7 @@ class Economy(commands.Cog):
         self.debt_penalty_loop.start() 
         
     def setup_db(self):
-        conn = sqlite3.connect(self.db_path)
+        conn = get_db_connection()
         cursor = conn.cursor()
         
         cursor.execute('''CREATE TABLE IF NOT EXISTS wallets (
@@ -127,7 +138,7 @@ class Economy(commands.Cog):
         conn.close()
 
     def get_wallet_data(self, user_id: int):
-        conn = sqlite3.connect(self.db_path)
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT balance, active_card FROM wallets WHERE user_id = ?", (user_id,))
         result = cursor.fetchone()
@@ -136,7 +147,7 @@ class Economy(commands.Cog):
         return 0, "silver"
 
     def get_rate(self) -> int:
-        conn = sqlite3.connect(self.db_path)
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT mimu_rate FROM config WHERE id = 1")
         result = cursor.fetchone()
@@ -171,7 +182,7 @@ class Economy(commands.Cog):
     # ==========================================
     @tasks.loop(minutes=30)
     async def loan_debt_collector(self):
-        conn = sqlite3.connect(self.db_path)
+        conn = get_db_connection()
         cursor = conn.cursor()
         now = datetime.datetime.now().timestamp()
         
@@ -193,7 +204,7 @@ class Economy(commands.Cog):
     @tasks.loop(hours=48)
     async def debt_penalty_loop(self):
         """Compounds negative balances by 1.5% every 48 hours to punish debt hoarders."""
-        conn = sqlite3.connect(self.db_path)
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT user_id, balance FROM wallets WHERE balance < 0")
         debtors = cursor.fetchall()
@@ -230,7 +241,7 @@ class Economy(commands.Cog):
     async def statement(self, interaction: discord.Interaction):
         await interaction.response.defer()
         
-        conn = sqlite3.connect(self.db_path)
+        conn = get_db_connection()
         cursor = conn.cursor()
         # Fetches the 50 most recent transactions for the user
         cursor.execute("SELECT amount, type, description, timestamp FROM transactions WHERE user_id = ? ORDER BY timestamp DESC LIMIT 50", (interaction.user.id,))
@@ -275,7 +286,7 @@ class Economy(commands.Cog):
         if bal < CARD_TIERS[card_type.value]["threshold"]:
             return await interaction.response.send_message(f"❌ **Access Denied.** You need **A$ {CARD_TIERS[card_type.value]['threshold']:,}** to use this card.", ephemeral=True)
         
-        conn = sqlite3.connect(self.db_path)
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("UPDATE wallets SET active_card = ? WHERE user_id = ?", (card_type.value, interaction.user.id))
         conn.commit()
@@ -290,7 +301,7 @@ class Economy(commands.Cog):
         if amount <= 0: return await interaction.response.send_message("❌ Invalid amount.", ephemeral=True)
         if user.id == interaction.user.id: return await interaction.response.send_message("❌ Cannot transfer to yourself.", ephemeral=True)
 
-        conn = sqlite3.connect(self.db_path)
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT balance FROM wallets WHERE user_id = ?", (interaction.user.id,))
         bal = cursor.fetchone()
@@ -324,7 +335,7 @@ class Economy(commands.Cog):
         if not (100 <= amount <= 100000): return await interaction.response.send_message("❌ Borrow limit: A$ 100 to A$ 100,000.", ephemeral=True)
         if not (1 <= days <= 7): return await interaction.response.send_message("❌ Term limit: 1 to 7 days.", ephemeral=True)
 
-        conn = sqlite3.connect(self.db_path)
+        conn = get_db_connection()
         cursor = conn.cursor()
         
         # --- NEW EXPIRY CHECK ---
@@ -369,7 +380,7 @@ class Economy(commands.Cog):
     async def stake_deposit(self, interaction: discord.Interaction, amount: int, duration: app_commands.Choice[int]):
         if amount < 100: return await interaction.response.send_message("❌ Minimum stake is A$ 100.", ephemeral=True)
 
-        conn = sqlite3.connect(self.db_path)
+        conn = get_db_connection()
         cursor = conn.cursor()
 
         cursor.execute("SELECT amount FROM stakes WHERE user_id = ?", (interaction.user.id,))
@@ -398,7 +409,7 @@ class Economy(commands.Cog):
 
     @stake_group.command(name="info", description="Check your current active stake")
     async def stake_info(self, interaction: discord.Interaction):
-        conn = sqlite3.connect(self.db_path)
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT amount, unlock_time, yield_rate FROM stakes WHERE user_id = ?", (interaction.user.id,))
         row = cursor.fetchone()
@@ -424,7 +435,7 @@ class Economy(commands.Cog):
 
     @stake_group.command(name="claim", description="Claim a completed stake and collect your yield")
     async def stake_claim(self, interaction: discord.Interaction):
-        conn = sqlite3.connect(self.db_path)
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT amount, unlock_time, yield_rate FROM stakes WHERE user_id = ?", (interaction.user.id,))
         row = cursor.fetchone()
@@ -497,24 +508,58 @@ class Economy(commands.Cog):
     # 💼 INCOME & RISK COMMANDS (WITH COOLDOWNS)
     # ==========================================
     @app_commands.command(name="daily", description="Claim your daily Athena Reserve allowance")
-    @app_commands.checks.cooldown(1, 86400) # 24 Hours
     async def daily(self, interaction: discord.Interaction):
         await interaction.response.defer() 
-        payout = 5000
-        conn = sqlite3.connect(self.db_path)
+        base_payout = 5000
+        
+        # Fetches user card to apply multipliers
+        _, active_card = self.get_wallet_data(interaction.user.id)
+        mults = {"silver": 1.0, "gold": 1.9, "crystal": 2.5, "plat_black": 4.5, "plat_pink": 4.5}
+        mult = mults.get(active_card, 1.0)
+        payout = int(base_payout * mult)
+        
+        conn = get_db_connection() # Using the new helper
         cursor = conn.cursor()
-        cursor.execute("INSERT INTO wallets (user_id, balance, active_card, highest_balance) VALUES (?, ?, 'silver', ?) ON CONFLICT(user_id) DO UPDATE SET balance = balance + ?, highest_balance = MAX(highest_balance, balance + ?)", (interaction.user.id, payout, payout, payout, payout))
+        
+        # Database Timer Logic (Fixes server restart reset)
+        try: cursor.execute("ALTER TABLE wallets ADD COLUMN last_daily REAL DEFAULT 0")
+        except sqlite3.OperationalError: pass
+        
+        cursor.execute("SELECT last_daily FROM wallets WHERE user_id = ?", (interaction.user.id,))
+        row = cursor.fetchone()
+        now = time.time()
+        
+        if row and row[0]:
+            if now - row[0] < 86400:
+                conn.close()
+                rem = int(86400 - (now - row[0]))
+                hours, rem = divmod(rem, 3600)
+                mins, secs = divmod(rem, 60)
+                return await interaction.followup.send(f"<a:wt_toronerd:1480580983593111602> Please wait **{hours}h {mins}m {secs}s**.")
+
+        cursor.execute("INSERT INTO wallets (user_id, balance, active_card, highest_balance, last_daily) VALUES (?, ?, 'silver', ?, ?) ON CONFLICT(user_id) DO UPDATE SET balance = balance + ?, highest_balance = MAX(highest_balance, balance + ?), last_daily = ?", (interaction.user.id, payout, payout, now, payout, payout, now))
         conn.commit()
         conn.close()
-        await interaction.followup.send(embed=discord.Embed(title="🎁 Daily Allowance", color=0xffd700, description=f"You claimed your daily **A$ {payout:,}**!"))
+        
+        # Displaying the breakdown
+        card_name = CARD_TIERS.get(active_card, CARD_TIERS["silver"])["name"]
+        embed = discord.Embed(title="꒰ა ﹒chérie  ⸝⸝", color=0xffffff)
+        embed.description = (
+            f"<a:wt_torolove:1480580899430203484> **Daily Allowance Credited**\\n\\n"
+            f"<:s_white2:1382052523166142486> **Base:** A$ {base_payout:,}\\n"
+            f"<:s_white2:1382052523166142486> **{card_name} Bonus:** +A$ {payout - base_payout:,}\\n"
+            f"**Total:** A$ {payout:,}"
+        )
+        await interaction.followup.send(embed=embed)
 
-    
+
+
     @app_commands.command(name="heist", description="Attempt a corporate heist for massive payouts. High Risk.")
     @app_commands.checks.cooldown(1, 10800) # 3 Hours
     async def heist(self, interaction: discord.Interaction):
         await interaction.response.defer()
 
-        conn = sqlite3.connect(self.db_path)
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("INSERT OR IGNORE INTO wallets (user_id, balance, active_card, highest_balance) VALUES (?, 0, 'silver', 0)", (interaction.user.id,))
         
@@ -554,7 +599,7 @@ class Economy(commands.Cog):
         if new_rate < 1:
             return await interaction.response.send_message("❌ Rate must be at least 1.", ephemeral=True)
 
-        conn = sqlite3.connect(self.db_path)
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("UPDATE config SET mimu_rate = ? WHERE id = 1", (new_rate,))
         conn.commit()
@@ -566,7 +611,7 @@ class Economy(commands.Cog):
         if interaction.user.id != 743411894416834590:
             return await interaction.response.send_message("❌ **Security Alert:** Access Denied. Only Phoenix has access to the Reserve Printing Press.", ephemeral=True)
             
-        conn = sqlite3.connect(self.db_path)
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("INSERT INTO wallets (user_id, balance, active_card, highest_balance) VALUES (?, ?, 'silver', ?) ON CONFLICT(user_id) DO UPDATE SET balance = balance + ?, highest_balance = MAX(highest_balance, balance + ?)", (user.id, amount, amount, amount, amount))
         cursor.execute("SELECT balance FROM wallets WHERE user_id = ?", (user.id,))
@@ -583,7 +628,7 @@ class Economy(commands.Cog):
         if interaction.user.id != 743411894416834590:
             return await interaction.response.send_message("❌ **Security Alert:** Access Denied. Only Phoenix can seize assets.", ephemeral=True)
             
-        conn = sqlite3.connect(self.db_path)
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("INSERT OR IGNORE INTO wallets (user_id, balance, active_card, highest_balance) VALUES (?, 0, 'silver', 0)", (user.id,))
         cursor.execute("UPDATE wallets SET balance = balance - ? WHERE user_id = ?", (amount, user.id))

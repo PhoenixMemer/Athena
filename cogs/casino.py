@@ -7,8 +7,18 @@ import asyncio
 
 DB_PATH = "economy.db"
 
+def get_db_connection():
+    # Adding a 20-second timeout gives tasks time to wait for a lock to release
+    conn = sqlite3.connect(DB_PATH, timeout=20, isolation_level=None)
+    # This line is the magic fix for "database is locked"
+    conn.execute('PRAGMA journal_mode=WAL;') 
+    conn.execute('PRAGMA temp_store = MEMORY;')
+    conn.execute('PRAGMA synchronous = NORMAL;')
+    return conn
+
+
 def get_balance(user_id: int) -> int:
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT balance FROM wallets WHERE user_id = ?", (user_id,))
     result = cursor.fetchone()
@@ -17,7 +27,7 @@ def get_balance(user_id: int) -> int:
 
 async def update_balance(interaction: discord.Interaction, amount: int):
     user_id = interaction.user.id
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db_connection()
     cursor = conn.cursor()
     try: cursor.execute("ALTER TABLE wallets ADD COLUMN highest_balance INTEGER DEFAULT 0")
     except: pass
@@ -548,6 +558,6 @@ class Casino(commands.Cog):
         embed.set_image(url="https://media.tenor.com/7H_I2t5fM6sAAAAC/casino-las-vegas.gif")
         embed.set_footer(text="Gamble responsibly. The House always has the edge.")
         
-        await interaction.response.send_message(embed=embed, view=CasinoLobbyView())
+        await interaction.followup.send(embed=embed, view=CasinoLobbyView())
 
 async def setup(bot): await bot.add_cog(Casino(bot))

@@ -8,13 +8,22 @@ import asyncio
 
 DB_PATH = "economy.db"
 
+def get_db_connection():
+    # Adding a 20-second timeout gives tasks time to wait for a lock to release
+    conn = sqlite3.connect(DB_PATH, timeout=20, isolation_level=None)
+    # This line is the magic fix for "database is locked"
+    conn.execute('PRAGMA journal_mode=WAL;') 
+    conn.execute('PRAGMA temp_store = MEMORY;')
+    conn.execute('PRAGMA synchronous = NORMAL;')
+    return conn
+
 # ==========================================
 # 📊 CAREER PATHS & CARD MULTIPLIERS
 # ==========================================
 CARD_TIERS = {
     "silver": {"multiplier": 1.0, "name": "Standard Silver"},
     "gold": {"multiplier": 1.9, "name": "Gold Elite"},
-    "crystal": {"multiplier": 2.5, "name": "Crystal Quartz"},
+    "crystal": {"multiplier": 2.5, "name": "Crystal Debit"},
     "plat_black": {"multiplier": 4.5, "name": "Platinum Black"},
     "plat_pink": {"multiplier": 4.5, "name": "Platinum Chérie"}
 }
@@ -91,7 +100,7 @@ class CareerDropdown(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         path_key = self.values[0]
-        conn = sqlite3.connect(DB_PATH)
+        conn = get_db_connection()
         cursor = conn.cursor()
         
         # Check if they already have a career
@@ -115,7 +124,7 @@ class CareerView(discord.ui.View):
 
     @discord.ui.button(label="View My Profile", style=discord.ButtonStyle.secondary, emoji="<a:wt_torolove:1480580899430203484>", row=1)
     async def profile_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        conn = sqlite3.connect(DB_PATH)
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT path, level, xp FROM user_careers WHERE user_id = ?", (interaction.user.id,))
         career = cursor.fetchone()
@@ -152,7 +161,7 @@ class Careers(commands.Cog):
         self.setup_db()
 
     def setup_db(self):
-        conn = sqlite3.connect(DB_PATH)
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute('''CREATE TABLE IF NOT EXISTS user_careers (
             user_id INTEGER PRIMARY KEY, path TEXT, level INTEGER DEFAULT 0, xp INTEGER DEFAULT 0, last_worked REAL DEFAULT 0
@@ -179,7 +188,7 @@ class Careers(commands.Cog):
 
     @app_commands.command(name="work", description="Work a shift at your job to earn A$ and XP")
     async def work(self, interaction: discord.Interaction):
-        conn = sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect("economy.db")
         cursor = conn.cursor()
         
         cursor.execute("SELECT path, level, xp, last_worked FROM user_careers WHERE user_id = ?", (interaction.user.id,))
@@ -191,10 +200,14 @@ class Careers(commands.Cog):
 
         path_key, level, xp, last_worked = career
         
-        # --- DYNAMIC COOLDOWN (VEHICLE LINKAGE) ---
+        # --- DYNAMIC COOLDOWN BUG FIX ---
         base_cooldown = 3600 # 1 hour
-        cursor.execute("SELECT MAX(m.cooldown_reduction) FROM user_vehicles u JOIN market_vehicles m ON u.vehicle_id = m.id WHERE u.user_id = ? AND u.needs_repair = 0", (interaction.user.id,))
-        max_reduction = cursor.fetchone()[0] or 0
+        try:
+            cursor.execute("SELECT MAX(m.cooldown_reduction) FROM user_vehicles u JOIN market_vehicles m ON u.vehicle_id = m.id WHERE u.user_id = ? AND u.needs_repair = 0", (interaction.user.id,))
+            max_reduction = cursor.fetchone()[0] or 0
+        except sqlite3.OperationalError:
+            max_reduction = 0 # Failsafe: Bypasses crash if marketplace vehicles table is empty
+            
         actual_cooldown = max(0, base_cooldown - (max_reduction * 60))
         
         now = time.time()
@@ -215,7 +228,6 @@ class Careers(commands.Cog):
         base_pay = current_level_data["base_pay"]
         mult = CARD_TIERS.get(active_card, CARD_TIERS["silver"])["multiplier"]
         
-        # Add slight variance so every work shift pays slightly differently
         payout = int((base_pay * random.uniform(0.9, 1.2)) * mult)
         gained_xp = random.randint(15, 30)
         new_xp = xp + gained_xp
@@ -237,13 +249,12 @@ class Careers(commands.Cog):
         conn.commit()
         conn.close()
 
-        # --- AESTHETIC OUTPUT ---
         card_name = CARD_TIERS.get(active_card, CARD_TIERS["silver"])["name"]
         task_done = random.choice(path_data["tasks"])
         
         embed = discord.Embed(title="꒰ა ﹒chérie  ⸝⸝", color=0xffffff)
         desc = (
-            f"<:s_white2:1382052523166142486> You spent your shift {task_done}.\n"
+            f"<:s_white2:1382052523166142486> You spent your shift doing {task_done}.\n"
             f"<:s_white2:1382052523166142486> **Earned:** A$ {payout:,} *(Includes {mult}x {card_name} Bonus)*\n"
             f"<:s_white2:1382052523166142486> **XP Gained:** +{gained_xp} XP\n\n"
         )

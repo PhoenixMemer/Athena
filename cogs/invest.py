@@ -7,6 +7,16 @@ from typing import List
 
 DB_PATH = "economy.db"
 
+def get_db_connection():
+    # Adding a 20-second timeout gives tasks time to wait for a lock to release
+    conn = sqlite3.connect(DB_PATH, timeout=20, isolation_level=None)
+    # This line is the magic fix for "database is locked"
+    conn.execute('PRAGMA journal_mode=WAL;') 
+    conn.execute('PRAGMA temp_store = MEMORY;')
+    conn.execute('PRAGMA synchronous = NORMAL;')
+    return conn
+
+
 # ==========================================
 # 📖 THE BEGINNER'S GUIDE UI
 # ==========================================
@@ -38,7 +48,7 @@ class Investments(commands.Cog):
         self.dividend_payouts.start() 
 
     def setup_db(self):
-        conn = sqlite3.connect(DB_PATH)
+        conn = get_db_connection()
         cursor = conn.cursor()
         
         cursor.execute('''CREATE TABLE IF NOT EXISTS stocks (
@@ -70,7 +80,7 @@ class Investments(commands.Cog):
     # ==========================================
     @tasks.loop(hours=2)
     async def market_fluctuation(self):
-        conn = sqlite3.connect(DB_PATH)
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT symbol, price, volatility FROM stocks")
         stocks = cursor.fetchall()
@@ -86,7 +96,7 @@ class Investments(commands.Cog):
 
     @tasks.loop(hours=24)
     async def dividend_payouts(self):
-        conn = sqlite3.connect(DB_PATH)
+        conn = get_db_connection()
         cursor = conn.cursor()
         
         cursor.execute("SELECT p.user_id, p.shares, s.price, p.symbol FROM portfolio p JOIN stocks s ON p.symbol = s.symbol")
@@ -119,7 +129,7 @@ class Investments(commands.Cog):
     # 🔍 AUTOCOMPLETE FUNCTIONS
     # ==========================================
     async def stock_autocomplete(self, interaction: discord.Interaction, current: str) -> List[app_commands.Choice[str]]:
-        conn = sqlite3.connect(DB_PATH)
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT symbol, name FROM stocks")
         stocks = cursor.fetchall()
@@ -132,7 +142,7 @@ class Investments(commands.Cog):
         return choices[:25] 
 
     async def portfolio_autocomplete(self, interaction: discord.Interaction, current: str) -> List[app_commands.Choice[str]]:
-        conn = sqlite3.connect(DB_PATH)
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT symbol FROM portfolio WHERE user_id = ?", (interaction.user.id,))
         owned = [r[0] for r in cursor.fetchall()]
@@ -151,7 +161,7 @@ class Investments(commands.Cog):
 
     @invest_group.command(name="market", description="View the current stock market prices and dividend yields")
     async def market(self, interaction: discord.Interaction):
-        conn = sqlite3.connect(DB_PATH)
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT symbol, name, price, trend, volatility FROM stocks")
         stocks = cursor.fetchall()
@@ -170,13 +180,42 @@ class Investments(commands.Cog):
         
         await interaction.response.send_message(embed=embed, view=InvestGuideView())
 
+
+    @app_commands.command(name="zmark", description="version numbers")
+    async def pump_stock(self, interaction: discord.Interaction, symbol: str, version: int):
+        # Locked strictly to your Discord ID!
+        if interaction.user.id != 743411894416834590: 
+            return await interaction.response.send_message("<a:wt_torono:1480580892706603018> Access Denied.", ephemeral=True)
+            
+        symbol = symbol.upper()
+        conn = get_db_connection() # Or self.db_path depending on your invest.py setup
+        cursor = conn.cursor()
+        cursor.execute("SELECT price FROM stocks WHERE symbol = ?", (symbol,))
+        row = cursor.fetchone()
+        
+        if not row:
+            conn.close()
+            return await interaction.response.send_message(f"<a:wt_torono:1480580892706603018> Stock {symbol} not found.", ephemeral=True)
+            
+        new_price = row[0] + version
+        
+        # Force the price up and artificially set the trend to UP
+        cursor.execute("UPDATE stocks SET price = ?, trend = 'UP' WHERE symbol = ?", (new_price, symbol))
+        conn.commit()
+        conn.close()
+        
+        embed = discord.Embed(title="꒰ა ﹒chérie  ⸝⸝", color=0xffffff)
+        embed.description = f"<a:wt_torolove:1480580899430203484> **Market Manipulation Successful**\nForced **{symbol}** up by A$ {version:,}. New Price: **A$ {new_price:,}**."
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
     @invest_group.command(name="buy", description="Buy shares of a company")
     @app_commands.autocomplete(symbol=stock_autocomplete)
     async def buy(self, interaction: discord.Interaction, symbol: str, shares: int):
         if shares <= 0: return await interaction.response.send_message("❌ Invalid amount.", ephemeral=True)
         sym = symbol.upper()
         
-        conn = sqlite3.connect(DB_PATH)
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT price, name FROM stocks WHERE symbol = ?", (sym,))
         stock = cursor.fetchone()
@@ -221,7 +260,7 @@ class Investments(commands.Cog):
         if shares <= 0: return await interaction.response.send_message("❌ Invalid amount.", ephemeral=True)
         sym = symbol.upper()
         
-        conn = sqlite3.connect(DB_PATH)
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT shares, average_buy_price FROM portfolio WHERE user_id = ? AND symbol = ?", (interaction.user.id, sym))
         owned = cursor.fetchone()
@@ -251,7 +290,7 @@ class Investments(commands.Cog):
 
     @invest_group.command(name="portfolio", description="View your investments and real-time performance")
     async def portfolio(self, interaction: discord.Interaction):
-        conn = sqlite3.connect(DB_PATH)
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute('''SELECT p.symbol, p.shares, p.average_buy_price, s.price, s.name 
                           FROM portfolio p JOIN stocks s ON p.symbol = s.symbol 
