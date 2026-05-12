@@ -136,30 +136,54 @@ async def apply_balance_increase(user_id: int, amount: int, channel: discord.Tex
     Adds `amount` to the user's wallet, updates highest_balance,
     and automatically upgrades the debit card tier if thresholds are crossed.
     If `channel` is provided, a nice embed will be sent to announce the upgrade.
+    
+    Uses a single atomic UPDATE with subquery to prevent race conditions.
     """
     conn = sqlite3.connect("economy.db", timeout=20, isolation_level=None)
     conn.execute('PRAGMA journal_mode=WAL;')
     conn.execute('PRAGMA temp_store = MEMORY;')
     cursor = conn.cursor()
 
-    cursor.execute("INSERT OR IGNORE INTO wallets (user_id, balance, active_card, highest_balance) VALUES (?, 0, 'silver', 0)", (user_id,))
+    # First ensure the wallet exists with all required columns initialized
+    cursor.execute("""
+        INSERT OR IGNORE INTO wallets (user_id, balance, active_card, highest_balance, last_daily) 
+        VALUES (?, 0, 'silver', 0, 0)
+    """, (user_id,))
+    
+    # Atomic update: calculate new values in a single query to prevent race conditions
+    cursor.execute("""
+        UPDATE wallets 
+        SET 
+            balance = balance + ?,
+            highest_balance = MAX(COALESCE(highest_balance, 0), balance + ?),
+            active_card = CASE
+                WHEN MAX(COALESCE(highest_balance, 0), balance + ?) >= 600000 THEN 'plat_black'
+                WHEN MAX(COALESCE(highest_balance, 0), balance + ?) >= 300000 THEN 'crystal'
+                WHEN MAX(COALESCE(highest_balance, 0), balance + ?) >= 100000 THEN 'gold'
+                ELSE COALESCE(active_card, 'silver')
+            END
+        WHERE user_id = ?
+    """, (amount, amount, amount, amount, amount, user_id))
+    
+    # Fetch the updated values to check for tier upgrades and return info
     cursor.execute("SELECT balance, active_card, highest_balance FROM wallets WHERE user_id = ?", (user_id,))
-    old_balance, old_card, old_highest = cursor.fetchone()
-
-    new_balance = old_balance + amount
-    new_highest = max(old_highest or 0, new_balance)
-
-    new_card = old_card
-    unlocked_name = None
-    for threshold, tier_key, tier_name in TIER_THRESHOLDS:
-        if (old_highest or 0) < threshold <= new_highest:
-            new_card = tier_key
-            unlocked_name = tier_name
-
-    cursor.execute("UPDATE wallets SET balance = ?, highest_balance = ?, active_card = ? WHERE user_id = ?",
-                   (new_balance, new_highest, new_card, user_id))
+    result = cursor.fetchone()
     conn.commit()
     conn.close()
+    
+    if not result:
+        return 0
+    
+    new_balance, new_card, new_highest = result
+    
+    # Determine if a new tier was unlocked by comparing old vs new highest
+    old_highest = new_highest - amount if new_highest > amount else 0
+    unlocked_name = None
+    
+    for threshold, tier_key, tier_name in TIER_THRESHOLDS:
+        if old_highest < threshold <= new_highest:
+            unlocked_name = tier_name
+            break
 
     if unlocked_name and channel:
         embed = discord.Embed(title="VIP Tier Unlocked!", color=0xffffff)
@@ -564,14 +588,22 @@ class Economy(commands.Cog):
         await interaction.response.defer()
         base_payout = 5000
 
-        _, active_card = self.get_wallet_data(interaction.user.id)
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Ensure wallet exists before reading card tier
+        cursor.execute("INSERT OR IGNORE INTO wallets (user_id, balance, active_card, highest_balance, last_daily) VALUES (?, 0, 'silver', 0, 0)", (interaction.user.id,))
+        
+        # Get the user's actual card tier from database
+        cursor.execute("SELECT active_card FROM wallets WHERE user_id = ?", (interaction.user.id,))
+        result = cursor.fetchone()
+        active_card = result[0] if result and result[0] else 'silver'
+        
         mults = {"silver": 1.0, "gold": 1.9, "crystal": 2.5, "plat_black": 4.5, "plat_pink": 4.5}
         mult = mults.get(active_card, 1.0)
         payout = int(base_payout * mult)
 
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
+        # Check cooldown
         cursor.execute("SELECT last_daily FROM wallets WHERE user_id = ?", (interaction.user.id,))
         row = cursor.fetchone()
         now = time.time()
@@ -584,11 +616,12 @@ class Economy(commands.Cog):
                 mins, secs = divmod(rem, 60)
                 return await interaction.followup.send(f"<a:wt_toronerd:1480580983593111602> Please wait **{hours}h {mins}m {secs}s**.")
 
-        cursor.execute("INSERT OR IGNORE INTO wallets (user_id, balance, active_card, highest_balance, last_daily) VALUES (?, 0, 'silver', 0, 0)", (interaction.user.id,))
+        # Update last_daily timestamp
         cursor.execute("UPDATE wallets SET last_daily = ? WHERE user_id = ?", (now, interaction.user.id))
         conn.commit()
         conn.close()
 
+        # Apply the balance increase using the centralized function
         await apply_balance_increase(interaction.user.id, payout, interaction.channel)
 
         card_name = CARD_TIERS.get(active_card, CARD_TIERS["silver"])["name"]

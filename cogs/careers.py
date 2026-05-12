@@ -188,8 +188,12 @@ class Careers(commands.Cog):
 
     @app_commands.command(name="work", description="Work a shift at your job to earn A$ and XP")
     async def work(self, interaction: discord.Interaction):
-        conn = sqlite3.connect("economy.db")
+        conn = sqlite3.connect("economy.db", timeout=20, isolation_level=None)
+        conn.execute('PRAGMA journal_mode=WAL;')
         cursor = conn.cursor()
+        
+        # Ensure wallet exists first
+        cursor.execute("INSERT OR IGNORE INTO wallets (user_id, balance, active_card, highest_balance) VALUES (?, 0, 'silver', 0)", (interaction.user.id,))
         
         cursor.execute("SELECT path, level, xp, last_worked FROM user_careers WHERE user_id = ?", (interaction.user.id,))
         career = cursor.fetchone()
@@ -218,9 +222,10 @@ class Careers(commands.Cog):
             return await interaction.response.send_message(f"<a:wt_toronerd:1480580983593111602> 𝑌𝑜𝑢 𝑎𝑟𝑒 𝑡𝑜𝑜 𝑡𝑖𝑟𝑒𝑑! 𝑌𝑜𝑢𝑟 𝑛𝑒𝑥𝑡 𝑠ℎ𝑖𝑓𝑡 𝑠𝑡𝑎𝑟𝑡𝑠 𝑖𝑛 **{mins}m {secs}s**.", ephemeral=True)
 
         # --- CALCULATE PAYOUT & CARDS ---
+        # Get the user's ACTUAL card tier from database (not relying on defaults)
         cursor.execute("SELECT active_card FROM wallets WHERE user_id = ?", (interaction.user.id,))
         card_row = cursor.fetchone()
-        active_card = card_row[0] if card_row else 'silver'
+        active_card = card_row[0] if card_row and card_row[0] else 'silver'
         
         path_data = CAREER_PATHS[path_key]
         current_level_data = path_data["levels"][level]
