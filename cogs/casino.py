@@ -1,9 +1,11 @@
+from __future__ import annotations
 import discord
 from discord import app_commands
 from discord.ext import commands
 import sqlite3
 import random
 import asyncio
+from cogs.economy import apply_balance_increase
 
 DB_PATH = "economy.db"
 
@@ -15,7 +17,6 @@ def get_db_connection():
     conn.execute('PRAGMA temp_store = MEMORY;')
     conn.execute('PRAGMA synchronous = NORMAL;')
     return conn
-
 
 def get_balance(user_id: int) -> int:
     conn = get_db_connection()
@@ -46,8 +47,11 @@ async def update_balance(interaction: discord.Interaction, amount: int):
 
     if (highest_bal or 0) < 100000 and new_highest >= 100000:
         unlocked, new_card = "Gold Elite", "gold"
+    elif (highest_bal or 0) < 300000 and new_highest >= 300000:
+        unlocked, new_card = "Crystal Debit", "crystal"
     elif (highest_bal or 0) < 600000 and new_highest >= 600000:
         unlocked, new_card = "Platinum Black", "plat_black"
+        
 
     cursor.execute("UPDATE wallets SET balance = ?, highest_balance = ?, active_card = ? WHERE user_id = ?", (new_bal, new_highest, new_card, user_id))
     conn.commit()
@@ -544,9 +548,14 @@ class CasinoLobbyView(discord.ui.View):
         self.add_item(CasinoDropdown())
 
 class Casino(commands.Cog):
-    def __init__(self, bot): self.bot = bot
+    def __init__(self, bot):
+        self.bot = bot
+
     @app_commands.command(name="casino", description="Enter the Grand Casino to wager your Athena Coins")
     async def casino_lobby(self, interaction: discord.Interaction):
+        # 1. Defer immediately to "claim" the interaction before a lag spike can kill it
+        await interaction.response.defer(ephemeral=False)
+
         embed = discord.Embed(title="🥂 The Grand Casino", color=0xffffff)
         embed.description = (
             "Welcome to the high-roller tables, where fortunes are made and lost.\n"
@@ -558,6 +567,59 @@ class Casino(commands.Cog):
         embed.set_image(url="https://media.tenor.com/7H_I2t5fM6sAAAAC/casino-las-vegas.gif")
         embed.set_footer(text="Gamble responsibly. The House always has the edge.")
         
-        await interaction.followup.send(embed=embed, view=CasinoLobbyView())
+        # 2. Use a try/except block to catch "Unknown Webhook" errors silently
+        try:
+            await interaction.followup.send(embed=embed, view=CasinoLobbyView())
+        except discord.errors.NotFound:
+            # This happens if the interaction expired or connection blipped
+            pass
 
-async def setup(bot): await bot.add_cog(Casino(bot))
+
+    @commands.command(name="cf", aliases=["coinflip"])
+    async def prefix_cf(self, ctx: commands.Context, choice: str = None, bet: str = None):
+        if not choice or not bet:
+            return await ctx.send("<a:wt_torono:1480580892706603018> Usage: `a.cf <heads/tails> <amount/all>`")
+        
+        choice = choice.lower()
+        if choice not in ['h', 'heads', 't', 'tails']:
+            return await ctx.send("<a:wt_torono:1480580892706603018> Choose `heads` or `tails`.")
+            
+        choice = "heads" if choice in ["h", "heads"] else "tails"
+        
+        bal = get_balance(ctx.author.id)
+        
+        if bet.lower() == "all":
+            bet_amt = bal
+        else:
+            try: bet_amt = int(bet.replace(',', ''))
+            except: return await ctx.send("<a:wt_torono:1480580892706603018> Invalid bet amount.")
+            
+        if bet_amt <= 0: return await ctx.send("<a:wt_torono:1480580892706603018> Bet must be at least A$ 1.")
+        if bet_amt > bal: return await ctx.send("<a:wt_torono:1480580892706603018> Insufficient funds.")
+        
+        # Deduct bet securely
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE wallets SET balance = balance - ? WHERE user_id = ?", (bet_amt, ctx.author.id))
+        conn.commit()
+        conn.close()
+        
+        msg = await ctx.send("🪙 *Flipping the coin...*")
+        await asyncio.sleep(1.5)
+        
+        outcome = random.choice(["heads", "tails"])
+        
+        if choice == outcome:
+            winnings = bet_amt * 2
+            await apply_balance_increase(ctx.author.id, winnings, ctx.channel)
+            
+            embed = discord.Embed(title=f"Landed: {outcome.upper()}", color=0xffffff)
+            embed.description = f"**You Won!** Payout: A$ {winnings:,}\n **Balance:** A$ {get_balance(ctx.author.id):,}"
+        else:
+            embed = discord.Embed(title=f"Landed: {outcome.upper()}", color=0xffffff)
+            embed.description = f"**You Lost:** A$ {bet_amt:,}\n **Balance:** A$ {get_balance(ctx.author.id):,}"
+            
+        await msg.edit(content=None, embed=embed)
+
+async def setup(bot): 
+    await bot.add_cog(Casino(bot))

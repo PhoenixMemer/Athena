@@ -241,9 +241,11 @@ class Marketplace(commands.Cog):
         vehicles = [
             ('CAR1', 'Mini Cooper S', 15000, 20),
             ('CAR2', 'Land Rover Defender', 45000, 30),
-            ('CAR3', 'Jaguar F-Type', 95000, 45),
-            ('CAR4', 'Aston Martin DB12', 185000, 60),
-            ('CAR5', 'Rolls-Royce Cullinan', 350000, 90)
+            ('CAR3', 'Jaguar F-Type', 95000, 35),
+            ('CAR4', 'Aston Martin DB12', 185000, 40),
+            ('CAR5', 'Chevrolet Corvette ZR1', 195000, 45),
+            ('CAR6', 'Rolls-Royce Cullinan', 250000, 50),
+            ('CAR7', 'Ferrari SF90 Stradale', 350000, 60)
         ]
         cursor.executemany("INSERT OR REPLACE INTO market_vehicles VALUES (?, ?, ?, ?)", vehicles)
         
@@ -279,9 +281,21 @@ class Marketplace(commands.Cog):
         for uid, base_rent, quality in cursor.fetchall():
             mult = 1.0 + (1.5 * (quality / 100.0))
             rent = int(base_rent * mult)
+            # Ensure wallet exists
+            cursor.execute("INSERT OR IGNORE INTO wallets (user_id, balance) VALUES (?, 0)", (uid,))
             cursor.execute("UPDATE wallets SET balance = balance + ?, highest_balance = MAX(highest_balance, balance + ?) WHERE user_id = ?", (rent, rent, uid))
-        conn.commit()
-        conn.close()
+# Now check for tier upgrade (we can call a helper that works with a cursor)
+# For simplicity, we'll just update the card silently here.
+
+# We'll implement a quick inline check:
+            cursor.execute("SELECT highest_balance FROM wallets WHERE user_id = ?", (uid,))
+            new_highest = cursor.fetchone()[0]
+            for threshold, tier_key in [(100000,"gold"),(300000,"crystal"),(600000,"plat_black")]:
+                if new_highest >= threshold and new_highest - rent < threshold:   # crossed threshold
+                    cursor.execute("UPDATE wallets SET active_card = ? WHERE user_id = ?", (tier_key, uid))
+                    break   # only upgrade once
+            conn.commit()
+            conn.close()
 
     @tasks.loop(hours=24)
     async def maintenance_sweep(self):

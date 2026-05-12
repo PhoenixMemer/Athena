@@ -115,7 +115,20 @@ class Investments(commands.Cog):
 
         for uid, amount in user_payouts.items():
             if amount > 0:
+                cursor.execute("INSERT OR IGNORE INTO wallets (user_id, balance) VALUES (?, 0)", (uid,))
                 cursor.execute("UPDATE wallets SET balance = balance + ?, highest_balance = MAX(highest_balance, balance + ?) WHERE user_id = ?", (amount, amount, uid))
+                
+                # Silent card tier upgrade check
+                cursor.execute("SELECT highest_balance, active_card FROM wallets WHERE user_id = ?", (uid,))
+                row = cursor.fetchone()
+                if row:
+                    highest, current_card = row
+                    new_card = current_card
+                    for threshold, tier_key in [(100000,"gold"),(300000,"crystal"),(600000,"plat_black")]:
+                        if highest >= threshold:
+                            new_card = tier_key
+                    if new_card != current_card:
+                        cursor.execute("UPDATE wallets SET active_card = ? WHERE user_id = ?", (new_card, uid))
 
         conn.commit()
         conn.close()
@@ -282,7 +295,7 @@ class Investments(commands.Cog):
         
         cursor.execute("UPDATE portfolio SET shares = shares - ? WHERE user_id = ? AND symbol = ?", (shares, interaction.user.id, sym))
         cursor.execute("UPDATE wallets SET balance = balance + ?, highest_balance = MAX(highest_balance, balance + ?) WHERE user_id = ?", (total_value, total_value, interaction.user.id))
-        cursor.execute("DELETE FROM portfolio WHERE shares <= 0") 
+        cursor.execute("DELETE FROM portfolio WHERE user_id = ? AND symbol = ? AND shares <= 0", (interaction.user.id, sym)) 
         conn.commit()
         conn.close()
         

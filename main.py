@@ -35,7 +35,6 @@ initial_extensions = [
     'cogs.afk',
     'cogs.fun',
     'cogs.reminders',
-    'cogs.vanity',
     'cogs.cupid_engine',
     'cogs.mod_training',
     'cogs.economy',

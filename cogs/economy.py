@@ -6,26 +6,31 @@ import os
 import io
 import random
 import datetime
+import time
 from PIL import Image, ImageDraw, ImageFont
 
 DB_PATH = "economy.db"
+
 def get_db_connection():
-    # Adding a 20-second timeout gives tasks time to wait for a lock to release
     conn = sqlite3.connect(DB_PATH, timeout=20, isolation_level=None)
-    # These lines fix "database is locked" and Wispbyte storage issues
-    conn.execute('PRAGMA journal_mode=WAL;') 
+    conn.execute('PRAGMA journal_mode=WAL;')
     conn.execute('PRAGMA temp_store = MEMORY;')
     conn.execute('PRAGMA synchronous = NORMAL;')
     return conn
 
-
 CARD_TIERS = {
     "silver": {"threshold": 0, "file": "card_silver.png", "color": (255, 255, 255), "name": "Standard Silver"},
     "gold": {"threshold": 100000, "file": "card_gold.png", "color": (255, 255, 255), "name": "Gold Elite"},
-    "crystal": {"threshold": 300000, "file": "card_crystal.png", "color": (255, 255, 255), "name": "Crystal Debit"}, # New Card
+    "crystal": {"threshold": 300000, "file": "card_crystal.png", "color": (255, 255, 255), "name": "Crystal Debit"},
     "plat_black": {"threshold": 600000, "file": "card_plat_black.png", "color": (255, 255, 255), "name": "Platinum Black"},
     "plat_pink": {"threshold": 600000, "file": "card_plat_pink.png", "color": (219, 120, 200), "name": "Platinum Chérie"}
 }
+
+TIER_THRESHOLDS = [
+    (100000, "gold", "Gold Elite"),
+    (300000, "crystal", "Crystal Debit"),
+    (600000, "plat_black", "Platinum Black"),
+]
 
 class StakingGuideView(discord.ui.View):
     def __init__(self):
@@ -49,6 +54,45 @@ class StakingGuideView(discord.ui.View):
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
+class SimplePaginationView(discord.ui.View):
+    def __init__(self, items, title, items_per_page=5):
+        super().__init__(timeout=180)
+        self.items = items
+        self.title = title
+        self.items_per_page = items_per_page
+        self.current_page = 0
+        self.max_pages = max(1, (len(items) - 1) // items_per_page + 1) if items else 1
+        self.update_buttons()
+
+    def update_buttons(self):
+        self.prev_button.disabled = self.current_page == 0
+        self.next_button.disabled = self.current_page == self.max_pages - 1
+
+    def get_embed(self):
+        embed = discord.Embed(title=self.title, color=0xffffff)
+        if not self.items:
+            embed.description = "No data available."
+            return embed
+        start = self.current_page * self.items_per_page
+        end = start + self.items_per_page
+        page_data = self.items[start:end]
+        embed.description = "".join(page_data)
+        embed.set_footer(text=f"Page {self.current_page + 1}/{self.max_pages}")
+        return embed
+
+    @discord.ui.button(label="", emoji="<:w_arrowleft:1272235695137751162>", style=discord.ButtonStyle.secondary)
+    async def prev_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.current_page -= 1
+        self.update_buttons()
+        await interaction.response.edit_message(embed=self.get_embed(), view=self)
+
+    @discord.ui.button(label="", emoji="<:w_arrowright:1272235711721898005>", style=discord.ButtonStyle.secondary)
+    async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.current_page += 1
+        self.update_buttons()
+        await interaction.response.edit_message(embed=self.get_embed(), view=self)
+
+
 class EarlyClaimView(discord.ui.View):
     def __init__(self, db_path, user_id, amount):
         super().__init__(timeout=60)
@@ -61,35 +105,68 @@ class EarlyClaimView(discord.ui.View):
         if interaction.user.id != self.user_id:
             return await interaction.response.send_message("❌ This is not your stake.", ephemeral=True)
 
-        # 15% Penalty on the initial deposit
         penalty_fee = int(self.amount * 0.15)
         payout = self.amount - penalty_fee
 
-        conn = get_db_connection()(self.db_path)
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("DELETE FROM stakes WHERE user_id = ?", (self.user_id,))
         cursor.execute("UPDATE wallets SET balance = balance + ?, highest_balance = MAX(highest_balance, balance + ?) WHERE user_id = ?", (payout, payout, self.user_id))
         conn.commit()
         conn.close()
 
-        # Disable buttons after click
         for child in self.children:
             child.disabled = True
-        
+
         embed = discord.Embed(title="⚠️ Early Stake Withdrawal", color=0xff0000)
         embed.description = f"You broke your lock period early.\n\n**Initial Deposit:** A$ {self.amount:,}\n**Penalty Fee (15%):** -A$ {penalty_fee:,}\n**Total Returned:** A$ {payout:,}"
-        
         await interaction.response.edit_message(embed=embed, view=self)
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
     async def cancel_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.user_id:
             return await interaction.response.send_message("❌ This is not your stake.", ephemeral=True)
-            
         for child in self.children:
             child.disabled = True
-            
         await interaction.response.edit_message(content="Canceled. Your stake remains safely locked in the Reserve.", embed=None, view=self)
+
+
+async def apply_balance_increase(user_id: int, amount: int, channel: discord.TextChannel = None):
+    """
+    Adds `amount` to the user's wallet, updates highest_balance,
+    and automatically upgrades the debit card tier if thresholds are crossed.
+    If `channel` is provided, a nice embed will be sent to announce the upgrade.
+    """
+    conn = sqlite3.connect("economy.db", timeout=20, isolation_level=None)
+    conn.execute('PRAGMA journal_mode=WAL;')
+    conn.execute('PRAGMA temp_store = MEMORY;')
+    cursor = conn.cursor()
+
+    cursor.execute("INSERT OR IGNORE INTO wallets (user_id, balance, active_card, highest_balance) VALUES (?, 0, 'silver', 0)", (user_id,))
+    cursor.execute("SELECT balance, active_card, highest_balance FROM wallets WHERE user_id = ?", (user_id,))
+    old_balance, old_card, old_highest = cursor.fetchone()
+
+    new_balance = old_balance + amount
+    new_highest = max(old_highest or 0, new_balance)
+
+    new_card = old_card
+    unlocked_name = None
+    for threshold, tier_key, tier_name in TIER_THRESHOLDS:
+        if (old_highest or 0) < threshold <= new_highest:
+            new_card = tier_key
+            unlocked_name = tier_name
+
+    cursor.execute("UPDATE wallets SET balance = ?, highest_balance = ?, active_card = ? WHERE user_id = ?",
+                   (new_balance, new_highest, new_card, user_id))
+    conn.commit()
+    conn.close()
+
+    if unlocked_name and channel:
+        embed = discord.Embed(title="VIP Tier Unlocked!", color=0xffffff)
+        embed.description = f"<@{user_id}>, your earnings pushed your balance to **A$ {new_balance:,}**.\nYou have unlocked and automatically equipped the **{unlocked_name}** card!"
+        await channel.send(embed=embed)
+
+    return new_balance
 
 
 class Economy(commands.Cog):
@@ -97,13 +174,12 @@ class Economy(commands.Cog):
         self.bot = bot
         self.db_path = "economy.db"
         self.setup_db()
-        self.loan_debt_collector.start() 
-        self.debt_penalty_loop.start() 
-        
+        self.loan_debt_collector.start()
+        self.debt_penalty_loop.start()
+
     def setup_db(self):
         conn = get_db_connection()
         cursor = conn.cursor()
-        
         cursor.execute('''CREATE TABLE IF NOT EXISTS wallets (
             user_id INTEGER PRIMARY KEY, balance INTEGER DEFAULT 0
         )''')
@@ -111,29 +187,27 @@ class Economy(commands.Cog):
         except: pass
         try: cursor.execute("ALTER TABLE wallets ADD COLUMN highest_balance INTEGER DEFAULT 0")
         except: pass
-        
+        try: cursor.execute("ALTER TABLE wallets ADD COLUMN last_daily REAL DEFAULT 0")
+        except: pass
+
         cursor.execute('''CREATE TABLE IF NOT EXISTS transactions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER,
             amount INTEGER,
-            type TEXT, 
+            type TEXT,
             description TEXT,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )''')
-
         cursor.execute('''CREATE TABLE IF NOT EXISTS loans (
             user_id INTEGER PRIMARY KEY, amount INTEGER, due_date REAL
         )''')
-        
         cursor.execute('''CREATE TABLE IF NOT EXISTS stakes (
             user_id INTEGER PRIMARY KEY, amount INTEGER, unlock_time REAL, yield_rate REAL
         )''')
-        
         cursor.execute('''CREATE TABLE IF NOT EXISTS config (
             id INTEGER PRIMARY KEY, mimu_rate INTEGER DEFAULT 100
         )''')
         cursor.execute("INSERT OR IGNORE INTO config (id, mimu_rate) VALUES (1, 100)")
-        
         conn.commit()
         conn.close()
 
@@ -157,7 +231,8 @@ class Economy(commands.Cog):
     async def generate_wallet_card(self, member: discord.Member, balance: int, requested_card: str) -> io.BytesIO:
         valid_card = requested_card
         if balance < CARD_TIERS[valid_card]["threshold"]:
-            if balance >= 600000: valid_card = "plat_black" 
+            if balance >= 600000: valid_card = "plat_black"
+            elif balance >= 300000: valid_card = "crystal"
             elif balance >= 100000: valid_card = "gold"
             else: valid_card = "silver"
 
@@ -177,27 +252,25 @@ class Economy(commands.Cog):
         buffer.seek(0)
         return buffer
 
-    # ==========================================
-    # 🏦 AUTOMATED BACKGROUND TASKS (DEBT)
-    # ==========================================
     @tasks.loop(minutes=30)
     async def loan_debt_collector(self):
         conn = get_db_connection()
         cursor = conn.cursor()
         now = datetime.datetime.now().timestamp()
-        
+
         cursor.execute("SELECT user_id, amount FROM loans WHERE due_date <= ?", (now,))
         overdue_loans = cursor.fetchall()
 
         for user_id, amount in overdue_loans:
-            repayment = int(amount * 1.10) 
+            repayment = int(amount * 1.10)
+            cursor.execute("INSERT OR IGNORE INTO wallets (user_id, balance) VALUES (?, 0)", (user_id,))
             cursor.execute("UPDATE wallets SET balance = balance - ? WHERE user_id = ?", (repayment, user_id))
             cursor.execute("DELETE FROM loans WHERE user_id = ?", (user_id,))
             try:
                 user = self.bot.get_user(user_id)
                 if user: await user.send(f"🏦 **LOAN COLLECTION:** The Central Reserve has forcibly deducted your overdue loan of **A$ {repayment:,}** (including 10% interest) from your account. If you lacked the funds, your account is now in the negative.")
             except: pass
-            
+
         conn.commit()
         conn.close()
 
@@ -209,7 +282,7 @@ class Economy(commands.Cog):
         cursor.execute("SELECT user_id, balance FROM wallets WHERE balance < 0")
         debtors = cursor.fetchall()
         for uid, bal in debtors:
-            penalty = int(abs(bal) * 0.015) # 1.5% penalty on the debt
+            penalty = int(abs(bal) * 0.015)
             cursor.execute("UPDATE wallets SET balance = balance - ? WHERE user_id = ?", (penalty, uid))
         conn.commit()
         conn.close()
@@ -219,31 +292,25 @@ class Economy(commands.Cog):
     async def before_tasks(self):
         await self.bot.wait_until_ready()
 
-    # ==========================================
-    # 💸 ECONOMY COMMANDS
-    # ==========================================
     @app_commands.command(name="bal", description="Check your Athena Reserve wallet balance")
     async def balance(self, interaction: discord.Interaction):
-        await interaction.response.defer() 
+        await interaction.response.defer()
         bal, active_card = self.get_wallet_data(interaction.user.id)
         image_buffer = await self.generate_wallet_card(interaction.user, bal, active_card)
         await interaction.followup.send(file=discord.File(fp=image_buffer, filename="wallet.png"))
 
     @commands.command(name="bal", aliases=["balance", "b"])
     async def prefix_bal(self, ctx: commands.Context):
-        async with ctx.typing(): 
+        async with ctx.typing():
             bal, active_card = self.get_wallet_data(ctx.author.id)
             image_buffer = await self.generate_wallet_card(ctx.author, bal, active_card)
             await ctx.send(file=discord.File(fp=image_buffer, filename="wallet.png"))
 
-    
     @app_commands.command(name="statement", description="View your official Athena Bank transaction history")
     async def statement(self, interaction: discord.Interaction):
         await interaction.response.defer()
-        
         conn = get_db_connection()
         cursor = conn.cursor()
-        # Fetches the 50 most recent transactions for the user
         cursor.execute("SELECT amount, type, description, timestamp FROM transactions WHERE user_id = ? ORDER BY timestamp DESC LIMIT 50", (interaction.user.id,))
         history = cursor.fetchall()
         conn.close()
@@ -253,25 +320,20 @@ class Economy(commands.Cog):
 
         formatted_logs = []
         for amount, t_type, desc, ts in history:
-            # Formatting the timestamp to look clean (e.g., 2026-05-11 14:30)
-            clean_time = ts.split(".")[0] if "." in ts else ts 
-            
+            clean_time = ts.split(".")[0] if "." in ts else ts
             if t_type == "CREDIT":
                 icon = "🟩"
                 amt_str = f"+A$ {amount:,}"
             else:
                 icon = "🟥"
                 amt_str = f"-A$ {amount:,}"
-
             formatted_logs.append(
                 f"{icon} **{amt_str}** | {desc}\n"
                 f"└─ *{clean_time}*\n\n"
             )
 
-        # You will need to make sure your SimplePaginationView class is available in economy.py!
         view = SimplePaginationView(formatted_logs, "𝑂𝑓𝑓𝑖𝑐𝑖𝑎𝑙 𝐵𝑎𝑛𝑘 𝑆𝑡𝑎𝑡𝑒𝑚𝑒𝑛𝑡", items_per_page=5)
         await interaction.followup.send(embed=view.get_embed(), view=view)
-    
 
     @app_commands.command(name="setcard", description="Equip an unlocked debit card tier")
     @app_commands.choices(card_type=[
@@ -285,13 +347,13 @@ class Economy(commands.Cog):
         bal, _ = self.get_wallet_data(interaction.user.id)
         if bal < CARD_TIERS[card_type.value]["threshold"]:
             return await interaction.response.send_message(f"❌ **Access Denied.** You need **A$ {CARD_TIERS[card_type.value]['threshold']:,}** to use this card.", ephemeral=True)
-        
+
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("UPDATE wallets SET active_card = ? WHERE user_id = ?", (card_type.value, interaction.user.id))
         conn.commit()
         conn.close()
-        
+
         embed = discord.Embed(title="Card Updated", color=0xffffff)
         embed.description = f"You have equipped the **{CARD_TIERS[card_type.value]['name']}**.\nRun `/bal` to view it."
         await interaction.response.send_message(embed=embed)
@@ -309,22 +371,20 @@ class Economy(commands.Cog):
             conn.close()
             return await interaction.response.send_message("❌ Insufficient funds, broke ahh", ephemeral=True)
 
-        # --- NEW LOAN SECURITY CHECK ---
         cursor.execute("SELECT amount FROM loans WHERE user_id = ?", (interaction.user.id,))
         active_loan = cursor.fetchone()
         if active_loan:
-            required_repayment = int(active_loan[0] * 1.10) # Loan amount + 10% interest
+            required_repayment = int(active_loan[0] * 1.10)
             remaining_after_give = bal[0] - amount
             if remaining_after_give < required_repayment:
                 conn.close()
                 return await interaction.response.send_message(f"❌ Transfer Denied: You have an active loan. You must maintain a balance of at least **A$ {required_repayment:,}** to cover your pending repayment.", ephemeral=True)
-        # -------------------------------
 
         cursor.execute("UPDATE wallets SET balance = balance - ? WHERE user_id = ?", (amount, interaction.user.id))
         cursor.execute("INSERT INTO wallets (user_id, balance, active_card, highest_balance) VALUES (?, ?, 'silver', ?) ON CONFLICT(user_id) DO UPDATE SET balance = balance + ?, highest_balance = MAX(highest_balance, balance + ?)", (user.id, amount, amount, amount, amount))
         conn.commit()
         conn.close()
-        
+
         embed = discord.Embed(title="💸 Wire Transfer", color=0xffffff)
         embed.description = f"Successfully transferred **A$ {amount:,}** to {user.mention}."
         await interaction.response.send_message(embed=embed)
@@ -337,31 +397,27 @@ class Economy(commands.Cog):
 
         conn = get_db_connection()
         cursor = conn.cursor()
-        
-        # --- NEW EXPIRY CHECK ---
+
         cursor.execute("SELECT amount, due_date FROM loans WHERE user_id = ?", (interaction.user.id,))
         active_loan = cursor.fetchone()
         if active_loan:
             conn.close()
             due_timestamp = active_loan[1]
             time_left = due_timestamp - datetime.datetime.now().timestamp()
-            
             if time_left > 0:
                 days_left = int(time_left // 86400)
                 hours_left = int((time_left % 86400) // 3600)
                 time_str = f"{days_left} days and {hours_left} hours"
             else:
                 time_str = "Overdue (Repayment pending)"
-                
             return await interaction.response.send_message(f"❌ You already have an active loan! Your repayment of **A$ {int(active_loan[0]*1.10):,}** is due in: **{time_str}**.", ephemeral=True)
-        # ------------------------
 
         due_date = (datetime.datetime.now() + datetime.timedelta(days=days)).timestamp()
         cursor.execute("INSERT INTO loans (user_id, amount, due_date) VALUES (?, ?, ?)", (interaction.user.id, amount, due_date))
         cursor.execute("INSERT INTO wallets (user_id, balance, active_card, highest_balance) VALUES (?, ?, 'silver', ?) ON CONFLICT(user_id) DO UPDATE SET balance = balance + ?, highest_balance = MAX(highest_balance, balance + ?)", (interaction.user.id, amount, amount, amount, amount))
         conn.commit()
         conn.close()
-        
+
         embed = discord.Embed(title="🏦 Loan Approved", color=0xffffff)
         embed.description = f"The Reserve credited **A$ {amount:,}** to your account.\n\n📅 **Due In:** {days} days\n💸 **Repayment:** A$ {int(amount*1.10):,} (10% Interest)\n*Note: This will be auto-deducted, even if it puts your account in the negative!*"
         await interaction.response.send_message(embed=embed)
@@ -445,15 +501,13 @@ class Economy(commands.Cog):
             return await interaction.response.send_message("❌ You have no active stakes to claim.", ephemeral=True)
 
         amount, unlock, rate = row
-        
-        # --- EARLY WITHDRAWAL LOGIC ---
+
         if datetime.datetime.now().timestamp() < unlock:
             conn.close()
-            
             time_left = unlock - datetime.datetime.now().timestamp()
             days_left = int(time_left // 86400)
             hours_left = int((time_left % 86400) // 3600)
-            
+
             embed = discord.Embed(title="⚠️ Warning: Early Withdrawal", color=0xffaa00)
             embed.description = (
                 f"Your stake is still locked for another **{days_left} days, {hours_left} hours**.\n\n"
@@ -464,16 +518,14 @@ class Economy(commands.Cog):
             )
             view = EarlyClaimView(self.db_path, interaction.user.id, amount)
             return await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-        # ------------------------------
 
-        # Standard Claim Logic (if lock is finished)
         payout = int(amount + (amount * rate))
         cursor.execute("DELETE FROM stakes WHERE user_id = ?", (interaction.user.id,))
         cursor.execute("UPDATE wallets SET balance = balance + ?, highest_balance = MAX(highest_balance, balance + ?) WHERE user_id = ?", (payout, payout, interaction.user.id))
         conn.commit()
         conn.close()
 
-        embed = discord.Embed(title="Stake Claimed!", color=0xffffff) 
+        embed = discord.Embed(title="Stake Claimed!", color=0xffffff)
         embed.description = f"Your lock period is over.\n\n**Initial Deposit:** A$ {amount:,}\n**Interest Earned:** A$ {payout - amount:,}\n**Total Added:** A$ {payout:,}"
         await interaction.response.send_message(embed=embed)
 
@@ -500,7 +552,7 @@ class Economy(commands.Cog):
         else:
             result = amount * rate
             desc = f"**A$ {amount:,}** × {rate} = **{result:,.2f} Mimu Coins**\n\n*Note: Athena coins will be deducted upon withdrawal.*"
-            
+
         embed = discord.Embed(title="💱 Currency Calculator", color=0xffffff, description=desc)
         await interaction.response.send_message(embed=embed)
 
@@ -509,26 +561,21 @@ class Economy(commands.Cog):
     # ==========================================
     @app_commands.command(name="daily", description="Claim your daily Athena Reserve allowance")
     async def daily(self, interaction: discord.Interaction):
-        await interaction.response.defer() 
+        await interaction.response.defer()
         base_payout = 5000
-        
-        # Fetches user card to apply multipliers
+
         _, active_card = self.get_wallet_data(interaction.user.id)
         mults = {"silver": 1.0, "gold": 1.9, "crystal": 2.5, "plat_black": 4.5, "plat_pink": 4.5}
         mult = mults.get(active_card, 1.0)
         payout = int(base_payout * mult)
-        
-        conn = get_db_connection() # Using the new helper
+
+        conn = get_db_connection()
         cursor = conn.cursor()
-        
-        # Database Timer Logic (Fixes server restart reset)
-        try: cursor.execute("ALTER TABLE wallets ADD COLUMN last_daily REAL DEFAULT 0")
-        except sqlite3.OperationalError: pass
-        
+
         cursor.execute("SELECT last_daily FROM wallets WHERE user_id = ?", (interaction.user.id,))
         row = cursor.fetchone()
         now = time.time()
-        
+
         if row and row[0]:
             if now - row[0] < 86400:
                 conn.close()
@@ -537,47 +584,50 @@ class Economy(commands.Cog):
                 mins, secs = divmod(rem, 60)
                 return await interaction.followup.send(f"<a:wt_toronerd:1480580983593111602> Please wait **{hours}h {mins}m {secs}s**.")
 
-        cursor.execute("INSERT INTO wallets (user_id, balance, active_card, highest_balance, last_daily) VALUES (?, ?, 'silver', ?, ?) ON CONFLICT(user_id) DO UPDATE SET balance = balance + ?, highest_balance = MAX(highest_balance, balance + ?), last_daily = ?", (interaction.user.id, payout, payout, now, payout, payout, now))
+        cursor.execute("INSERT OR IGNORE INTO wallets (user_id, balance, active_card, highest_balance, last_daily) VALUES (?, 0, 'silver', 0, 0)", (interaction.user.id,))
+        cursor.execute("UPDATE wallets SET last_daily = ? WHERE user_id = ?", (now, interaction.user.id))
         conn.commit()
         conn.close()
-        
-        # Displaying the breakdown
+
+        await apply_balance_increase(interaction.user.id, payout, interaction.channel)
+
         card_name = CARD_TIERS.get(active_card, CARD_TIERS["silver"])["name"]
         embed = discord.Embed(title="꒰ა ﹒chérie  ⸝⸝", color=0xffffff)
         embed.description = (
-            f"<a:wt_torolove:1480580899430203484> **Daily Allowance Credited**\\n\\n"
-            f"<:s_white2:1382052523166142486> **Base:** A$ {base_payout:,}\\n"
-            f"<:s_white2:1382052523166142486> **{card_name} Bonus:** +A$ {payout - base_payout:,}\\n"
+            f"<a:wt_torolove:1480580899430203484> **Daily Allowance Credited**\n\n"
+            f"<:s_white2:1382052523166142486> **Base:** A$ {base_payout:,}\n"
+            f"<:s_white2:1382052523166142486> **{card_name} Bonus:** +A$ {payout - base_payout:,}\n"
             f"**Total:** A$ {payout:,}"
         )
         await interaction.followup.send(embed=embed)
 
-
-
     @app_commands.command(name="heist", description="Attempt a corporate heist for massive payouts. High Risk.")
-    @app_commands.checks.cooldown(1, 10800) # 3 Hours
+    @app_commands.checks.cooldown(1, 10800)
     async def heist(self, interaction: discord.Interaction):
         await interaction.response.defer()
 
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("INSERT OR IGNORE INTO wallets (user_id, balance, active_card, highest_balance) VALUES (?, 0, 'silver', 0)", (interaction.user.id,))
-        
-        success = random.random() < 0.40 # 40% win chance
-        
+
+        success = random.random() < 0.40
+
         if success:
             winnings = 10000
-            cursor.execute("UPDATE wallets SET balance = balance + ?, highest_balance = MAX(highest_balance, balance + ?) WHERE user_id = ?", (winnings, winnings, interaction.user.id))
+            await apply_balance_increase(interaction.user.id, winnings, interaction.channel)
             embed = discord.Embed(title="🕵️‍♂️ Heist Successful!", color=0x00ff00)
             embed.description = f"You successfully breached a rival Megacorp's database and stole **A$ {winnings:,}**!"
         else:
             fine = 3000
             cursor.execute("UPDATE wallets SET balance = balance - ? WHERE user_id = ?", (fine, interaction.user.id))
+            conn.commit()
+            conn.close()
             embed = discord.Embed(title="🚨 BUSTED!", color=0xff0000)
             embed.description = f"Athena Security caught you. You were fined **A$ {fine:,}**.\n*(This will put you in debt if you lack the funds!)*"
-            
-        conn.commit()
-        conn.close()
+
+        if success:
+            conn.commit()
+            conn.close()
         await interaction.followup.send(embed=embed)
 
     async def cog_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
@@ -610,7 +660,7 @@ class Economy(commands.Cog):
     async def mint_coins(self, interaction: discord.Interaction, user: discord.Member, amount: int):
         if interaction.user.id != 743411894416834590:
             return await interaction.response.send_message("❌ **Security Alert:** Access Denied. Only Phoenix has access to the Reserve Printing Press.", ephemeral=True)
-            
+
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("INSERT INTO wallets (user_id, balance, active_card, highest_balance) VALUES (?, ?, 'silver', ?) ON CONFLICT(user_id) DO UPDATE SET balance = balance + ?, highest_balance = MAX(highest_balance, balance + ?)", (user.id, amount, amount, amount, amount))
@@ -618,7 +668,7 @@ class Economy(commands.Cog):
         bal = cursor.fetchone()[0]
         conn.commit()
         conn.close()
-        
+
         embed = discord.Embed(title="🏦 Bank Transfer Successful", color=0xffffff)
         embed.description = f"Added {amount:,} coins to {user.mention}.\nNew Balance: **A$ {bal:,}**"
         await interaction.response.send_message(embed=embed)
@@ -627,20 +677,20 @@ class Economy(commands.Cog):
     async def deduct_coins(self, interaction: discord.Interaction, user: discord.Member, amount: int):
         if interaction.user.id != 743411894416834590:
             return await interaction.response.send_message("❌ **Security Alert:** Access Denied. Only Phoenix can seize assets.", ephemeral=True)
-            
+
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("INSERT OR IGNORE INTO wallets (user_id, balance, active_card, highest_balance) VALUES (?, 0, 'silver', 0)", (user.id,))
         cursor.execute("UPDATE wallets SET balance = balance - ? WHERE user_id = ?", (amount, user.id))
-        
         cursor.execute("SELECT balance FROM wallets WHERE user_id = ?", (user.id,))
         bal = cursor.fetchone()[0]
         conn.commit()
         conn.close()
-        
+
         embed = discord.Embed(title="🚨 Assets Seized", color=0xffffff)
         embed.description = f"Successfully deducted **A$ {amount:,}** from {user.mention}.\nNew Balance: **A$ {bal:,}**"
         await interaction.response.send_message(embed=embed)
+
 
 async def setup(bot):
     await bot.add_cog(Economy(bot))

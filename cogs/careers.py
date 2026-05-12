@@ -245,9 +245,12 @@ class Careers(commands.Cog):
                 
         # --- UPDATE DATABASE ---
         cursor.execute("UPDATE user_careers SET xp = ?, level = ?, last_worked = ? WHERE user_id = ?", (new_xp, new_level, now, interaction.user.id))
-        cursor.execute("INSERT INTO wallets (user_id, balance, active_card, highest_balance) VALUES (?, ?, 'silver', ?) ON CONFLICT(user_id) DO UPDATE SET balance = balance + ?, highest_balance = MAX(highest_balance, balance + ?)", (interaction.user.id, payout, payout, payout, payout))
         conn.commit()
         conn.close()
+
+        # Use the centralized balance helper for auto card upgrade
+        from cogs.economy import apply_balance_increase
+        await apply_balance_increase(interaction.user.id, payout, interaction.channel)
 
         card_name = CARD_TIERS.get(active_card, CARD_TIERS["silver"])["name"]
         task_done = random.choice(path_data["tasks"])

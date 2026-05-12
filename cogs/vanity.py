@@ -1,6 +1,10 @@
 import discord
 from discord.ext import commands, tasks
 import asyncio
+import logging
+
+# Set up a logger for proper error reporting
+logger = logging.getLogger(__name__)
 
 class Vanity(commands.Cog):
     """Vanity URL Tracking System"""
@@ -37,6 +41,7 @@ class Vanity(commands.Cog):
         
         vanity_role = member.guild.get_role(self.vanity_role_id)
         if not vanity_role:
+            logger.warning(f"⚠️ Vanity role ID {self.vanity_role_id} not found in guild {member.guild.name}")
             return False
         
         # Skip checking presence updates for offline members (but still allow manual checks)
@@ -83,7 +88,10 @@ class Vanity(commands.Cog):
                 return True
                 
             except discord.Forbidden:
-                print(f"Missing permissions to add vanity role to {member.display_name}")
+                logger.warning(f"⚠️ Missing permissions to add vanity role to {member.display_name}")
+                return False
+            except discord.HTTPException as e:
+                logger.error(f"❌ HTTP error adding role to {member.display_name}: {e}")
                 return False
         
         elif not has_vanity and has_role:
@@ -91,20 +99,15 @@ class Vanity(commands.Cog):
             # But only if this is a real presence update (not just going offline)
             # OR if it's a manual force check
             if force_check or (is_presence_update and member.status != discord.Status.offline):
-                # cogs/vanity.py around line 95
                 try:
                     await member.remove_roles(vanity_role)
-                except discord.errors.DiscordServerError:
-                    # If Discord is having a mid-life crisis, we just skip this check and try again next loop
-                    logger.warning(f"⚠️ Discord 503 error: Could not remove role from {member.name}. Skipping...")
-                except Exception as e:
-                    logger.error(f"Error in vanity check: {e}")
-                    
                     self.vanity_tracking[member.id] = False
-                    return False
                 except discord.Forbidden:
-                    print(f"Missing permissions to remove vanity role from {member.display_name}")
-                    return True
+                    logger.warning(f"⚠️ Missing permissions to remove vanity role from {member.display_name}. Check role hierarchy.")
+                    return True  # They still have the role even though we can't remove it
+                except discord.HTTPException as e:
+                    logger.error(f"❌ HTTP error removing role from {member.display_name}: {e}")
+                    return has_role
         
         return has_role
     
