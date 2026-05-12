@@ -3,6 +3,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 import sqlite3
 import random
+import time
 from typing import List, Optional
 from contextlib import contextmanager
 
@@ -61,6 +62,7 @@ def log_transaction(cursor, user_id: int, amount: int, tx_type: str, description
         (user_id, amount, tx_type.upper(), description)
     )
 
+
 def check_tier_upgrade(cursor, user_id: int):
     """Checks highest_balance and upgrades active_card if threshold crossed"""
     cursor.execute("SELECT highest_balance, active_card FROM wallets WHERE user_id = ?", (user_id,))
@@ -76,7 +78,7 @@ def check_tier_upgrade(cursor, user_id: int):
             new_card = tier_key
             break
             
-    if new_card != current_card:
+    if new_card != current_card and not (current_card == "plat_pink" and new_card == "plat_black"):
         cursor.execute("UPDATE wallets SET active_card = ? WHERE user_id = ?", (new_card, user_id))
         log_transaction(cursor, user_id, 0, "TIER_UPGRADE", f"Auto-upgraded to {new_card}")
 
@@ -359,6 +361,25 @@ class Marketplace(commands.Cog):
     # ==========================================
     #  AUTOMATED BACKGROUND TASKS
     # ==========================================
+
+    # marketplace.py (and similarly for invest.py)
+
+    @tasks.loop(hours=24)
+    async def rent_collection(self):
+        with get_db_cursor() as cursor:
+        # ---- GUARD ----
+            cursor.execute("SELECT value FROM config WHERE key = 'last_rent_cycle'")
+            row = cursor.fetchone()
+            now = time.time()
+        if row and (now - float(row[0])) < 86400:
+            return  # already ran today
+        cursor.execute("INSERT OR REPLACE INTO config (key, value) VALUES ('last_rent_cycle', ?)", (str(now),))
+        # ---- END GUARD ----
+
+        # original rent logic...
+
+
+
     @tasks.loop(hours=24)
     async def rent_collection(self):
         with get_db_cursor() as cursor:

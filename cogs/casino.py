@@ -62,23 +62,22 @@ def log_casino_tx(cursor, user_id: int, amount: int, tx_type: str, description: 
     )
 
 def check_tier_upgrade(cursor, user_id: int):
-    """Checks highest_balance and upgrades active_card if threshold crossed"""
     cursor.execute("SELECT highest_balance, active_card FROM wallets WHERE user_id = ?", (user_id,))
     row = cursor.fetchone()
     if not row: return
-    
     highest = row[0] or 0
     current_card = (row[1] or "silver").strip()
+
+    # Determine the best tier based on highest balance
     new_card = current_card
-    
     for threshold, tier_key in [(100_000, "gold"), (300_000, "crystal"), (600_000, "plat_black")]:
-        if highest >= threshold and tier_key != current_card:
-            new_card = tier_key
-            break
-            
+        if highest >= threshold:
+            new_card = tier_key  # keep going, highest wins
+
+    # Only update if the new card is different (upgrade or side‑grade to black)
     if new_card != current_card:
         cursor.execute("UPDATE wallets SET active_card = ? WHERE user_id = ?", (new_card, user_id))
-        log_casino_tx(cursor, user_id, 0, "TIER_UPGRADE", f"Auto-upgraded to {new_card}")
+        log_casino_tx(cursor, user_id, 0, "TIER_UPGRADE", f"Auto‑upgraded to {new_card}")
 
 def get_current_balance(user_id: int) -> int:
     with get_db_cursor() as c:
@@ -623,7 +622,7 @@ class BetModal(discord.ui.Modal):
             await interaction.followup.send(embed=discord.Embed(title="🎲 Craps", description=f"Bet: A$ {bet:,}. What will the two dice roll?"), view=DiceView(interaction.user.id, bet))
         elif self.game_name == "Baccarat":
             await interaction.followup.send(embed=discord.Embed(title="🏛️ Baccarat", description=f"Bet: A$ {bet:,}. Player or Banker?"), view=BaccaratView(interaction.user.id, bet))
-                       
+
 class CasinoDropdown(discord.ui.Select):
     def __init__(self):
         options = [

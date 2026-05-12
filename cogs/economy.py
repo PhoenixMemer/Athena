@@ -95,12 +95,15 @@ async def apply_balance_increase(user_id: int, amount: int, channel: discord.Tex
                 current_card = (current_card or "silver").strip()
                 new_card = current_card
                 unlocked_name = None
-                
                 for threshold, tier_key, tier_name in TIER_THRESHOLDS:
+    # threshold crossed during this increment?
                     if (highest - amount) < threshold <= highest:
-                        new_card = tier_key
-                        unlocked_name = tier_name
-                        break
+        # keep the highest tier
+                        if tier_key != new_card:   # but don't downgrade (if we already got a higher one)
+            # assign order numbers to compare (or rely on threshold ascending)
+                            new_card = tier_key
+                            unlocked_name = tier_name
+                            break
                 
                 if new_card != current_card:
                     cursor.execute("UPDATE wallets SET active_card = ? WHERE user_id = ?", (new_card, user_id))
@@ -110,7 +113,7 @@ async def apply_balance_increase(user_id: int, amount: int, channel: discord.Tex
                 final_bal = cursor.fetchone()[0]
                 break
         else:
-            print(f"⚠️ Balance update failed for user {user_id} after {max_retries} attempts")
+            print(f"Balance update failed for user {user_id} after {max_retries} attempts")
             return None, None, None
 
     if unlocked_name and channel:
@@ -144,26 +147,31 @@ class StakingGuideView(discord.ui.View):
 class SimplePaginationView(discord.ui.View):
     def __init__(self, items, title, items_per_page=5):
         super().__init__(timeout=180)
-        self.items = items
         self.title = title
         self.items_per_page = items_per_page
         self.current_page = 0
-        self.max_pages = max(1, (len(items) - 1) // items_per_page + 1) if items else 1
+        
+        # Pre-slice all pages ONCE (no repeated slicing)
+        self.pages = [
+            items[i:i + items_per_page] 
+            for i in range(0, len(items), items_per_page)
+        ] if items else [[]]
+        
+        self.max_pages = len(self.pages)
         self.update_buttons()
 
     def update_buttons(self):
         self.prev_button.disabled = self.current_page == 0
-        self.next_button.disabled = self.current_page == self.max_pages - 1
+        self.next_button.disabled = self.current_page >= self.max_pages - 1
 
     def get_embed(self):
         embed = discord.Embed(title=self.title, color=0xffffff)
-        if not self.items:
+        if not self.pages[0]:
             embed.description = "No data available."
             return embed
-        start = self.current_page * self.items_per_page
-        end = start + self.items_per_page
-        page_data = self.items[start:end]
-        embed.description = "\n".join(page_data)
+        
+        page_data = self.pages[self.current_page]
+        embed.description = "".join(page_data)
         embed.set_footer(text=f"Page {self.current_page + 1}/{self.max_pages}")
         return embed
 
@@ -173,7 +181,7 @@ class SimplePaginationView(discord.ui.View):
         self.update_buttons()
         await interaction.response.edit_message(embed=self.get_embed(), view=self)
 
-    @discord.ui.button(label="▶", emoji="<:w_arrowright:1272235711721898005>", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="", emoji="<:w_arrowright:1272235711721898005>", style=discord.ButtonStyle.secondary)
     async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.current_page += 1
         self.update_buttons()
@@ -341,10 +349,11 @@ class Economy(commands.Cog):
             bal, active_card = self.get_wallet_data(ctx.author.id)
             image_buffer = await self.generate_wallet_card(ctx.author, bal, active_card)
             await ctx.send(file=discord.File(fp=image_buffer, filename="wallet.png"))
-
+    
     @app_commands.command(name="statement", description="View your official Athena Bank transaction history")
     async def statement(self, interaction: discord.Interaction):
         await interaction.response.defer()
+        history = []
         with get_db_cursor() as cursor:
             cursor.execute("SELECT amount, type, description, timestamp FROM transactions WHERE user_id = ? ORDER BY timestamp DESC LIMIT 50", (interaction.user.id,))
             history = cursor.fetchall()
@@ -355,11 +364,28 @@ class Economy(commands.Cog):
         formatted_logs = []
         for amount, t_type, desc, ts in history:
             clean_time = ts.split(".")[0] if "." in ts else ts
-            icon, amt_str = ("🟩", f"+A$ {amount:,}") if t_type == "CREDIT" else ("🟥", f"-A$ {amount:,}")
-            formatted_logs.append(f"{icon} **{amt_str}** | {desc}\n─ *{clean_time}*\n\n")
+
+            # Determine if money was added or removed
+            type_upper = t_type.upper() if t_type else ""
+            is_credit = type_upper in ("CREDIT", "DAILY", "WORK", "HEIST_WIN", "STAKING_CLAIM",
+                                       "DIVIDEND", "TRANSFER_IN", "CASINO_WIN", "SELL_STOCK",
+                                       "RENT_INCOME", "LOAN_DISBURSED")
+
+            if is_credit:
+                icon = "<:income_athena:1503894488299343892>"
+                amt_str = f"+A$ {abs(amount):,}"
+            else:
+                icon = "<:expense_athena:1503894540220760226>"
+                amt_str = f"-A$ {abs(amount):,}"
+
+            formatted_logs.append(f"{icon} **{amt_str}** | {desc}\n└─ *{clean_time}*\n\n")
 
         view = SimplePaginationView(formatted_logs, "Official Bank Statement", items_per_page=5)
         await interaction.followup.send(embed=view.get_embed(), view=view)
+
+    
+
+
 
     @app_commands.command(name="setcard", description="Equip an unlocked debit card tier")
     @app_commands.choices(card_type=[

@@ -1,5 +1,6 @@
 import discord
 from discord import app_commands
+import time 
 from discord.ext import commands, tasks
 import sqlite3
 import random
@@ -74,7 +75,7 @@ def apply_tier_upgrade(cursor, user_id: int):
     elif highest >= 300_000: new_card = "crystal"
     elif highest >= 100_000: new_card = "gold"
     
-    if new_card != current_card:
+    if new_card != current_card and not (current_card == "plat_pink" and new_card == "plat_black"):
         cursor.execute("UPDATE wallets SET active_card = ? WHERE user_id = ?", (new_card, user_id))
         log_transaction(cursor, user_id, 0, "CARD_UPGRADE", f"Auto-upgraded to {new_card}")
 
@@ -152,6 +153,22 @@ class Investments(commands.Cog):
                 new_price = max(10, int(price + (price * change))) 
                 trend = "<:stockup_athena:1503776772850712616> UP" if new_price > price else "<:stockdown_athena:1503776838789501171> DOWN" if new_price < price else "➖ FLAT"
                 cursor.execute("UPDATE stocks SET price = ?, trend = ? WHERE symbol = ?", (new_price, trend, sym))
+
+    # marketplace.py (and similarly for invest.py)
+
+    @tasks.loop(hours=24)
+    async def rent_collection(self):
+        with get_db_cursor() as cursor:
+        # ---- GUARD ----
+            cursor.execute("SELECT value FROM config WHERE key = 'last_rent_cycle'")
+            row = cursor.fetchone()
+            now = time.time()
+            if row and (now - float(row[0])) < 86400:
+                return  # already ran today
+            cursor.execute("INSERT OR REPLACE INTO config (key, value) VALUES ('last_rent_cycle', ?)", (str(now),))
+        # ---- END GUARD ----
+
+        # original rent logic...
 
     @tasks.loop(hours=24)
     async def dividend_payouts(self):
