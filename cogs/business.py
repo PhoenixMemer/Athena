@@ -678,10 +678,10 @@ class Business(commands.Cog):
             v.add_item(discord.ui.Button(label="Secure Loan", style=discord.ButtonStyle.secondary, custom_id="f_loan"))
             async def call(ix): await ix.response.send_modal(StartupModal(ix.data['custom_id']=="f_loan"))
             for child in v.children: child.callback = call
-            return await i.response.send_message(embed=discord.Embed(title="꒰ა ﹒chérie  ⸝⸝", color=0xffffff, description="Incorporate for A$ 500k."), view=v, ephemeral=True)
+            return await i.response.send_message(embed=discord.Embed(title="꒰ა ﹒chérie  ⸝⸝", color=0xffffff, description="Incorporate for A$ 500k."), view=v, ephemeral=False)
         c.execute("SELECT COUNT(id), AVG(morale) FROM employees WHERE user_id = ?", (i.user.id,))
         emps = c.fetchone(); conn.close()
-        await i.response.send_message("<a:wt_torospin:1480580977867624540> *𝐴𝑐𝑐𝑒𝑠𝑠𝑖𝑛𝑔 𝐶𝐸𝑂 𝑇𝑒𝑟𝑚𝑖𝑛𝑎𝑙...*", ephemeral=True)
+        await i.response.send_message("<a:wt_torospin:1480580977867624540> *𝐴𝑐𝑐𝑒𝑠𝑠𝑖𝑛𝑔 𝐶𝐸𝑂 𝑇𝑒𝑟𝑚𝑖𝑛𝑎𝑙...*", ephemeral=False)
         await asyncio.sleep(1.5)
         embed = discord.Embed(title=f"꒰ა ﹒{biz[0]}  ⸝⸝", color=0xffffff)
         embed.description = (

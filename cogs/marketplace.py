@@ -4,8 +4,96 @@ from discord.ext import commands, tasks
 import sqlite3
 import random
 from typing import List, Optional
+from contextlib import contextmanager
 
 DB_PATH = "economy.db"
+
+# ==========================================
+# 🗄️ SAFE DATABASE CONTEXT MANAGER
+# ==========================================
+@contextmanager
+def get_db_cursor():
+    """Context manager for safe, atomic DB operations with WAL mode"""
+    conn = sqlite3.connect(DB_PATH, timeout=20, isolation_level=None)
+    conn.execute('PRAGMA journal_mode=WAL;')
+    conn.execute('PRAGMA temp_store = MEMORY;')
+    conn.execute('PRAGMA synchronous = NORMAL;')
+    cursor = conn.cursor()
+    try:
+        yield cursor
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        conn.close()
+
+# ==========================================
+# 🔒 ATOMIC BALANCE & TRANSACTION HELPERS
+# ==========================================
+def atomic_balance_update(cursor, user_id: int, delta: int) -> bool:
+    """Atomically updates balance and highest_balance with optimistic locking."""
+    cursor.execute("SELECT balance, highest_balance FROM wallets WHERE user_id = ?", (user_id,))
+    row = cursor.fetchone()
+    
+    if row is None:
+        cursor.execute("INSERT OR IGNORE INTO wallets (user_id, balance, active_card, highest_balance) VALUES (?, 0, 'silver', 0)", (user_id,))
+        new_highest = max(0, delta)
+        cursor.execute("UPDATE wallets SET balance = ?, highest_balance = ? WHERE user_id = ?", (delta, new_highest, user_id))
+        return True
+    
+    old_balance = row[0] or 0
+    old_highest = row[1] or 0
+    new_balance = old_balance + delta
+    new_highest = max(old_highest, new_balance)
+    
+    # Only update if balance hasn't changed since we read it
+    cursor.execute(
+        "UPDATE wallets SET balance = ?, highest_balance = ? WHERE user_id = ? AND balance = ?",
+        (new_balance, new_highest, user_id, old_balance)
+    )
+    return cursor.rowcount > 0
+
+def log_transaction(cursor, user_id: int, amount: int, tx_type: str, description: str):
+    """Logs every balance change for audit trails"""
+    cursor.execute(
+        "INSERT INTO transactions (user_id, amount, type, description) VALUES (?, ?, ?, ?)",
+        (user_id, amount, tx_type.upper(), description)
+    )
+
+def check_tier_upgrade(cursor, user_id: int):
+    """Checks highest_balance and upgrades active_card if threshold crossed"""
+    cursor.execute("SELECT highest_balance, active_card FROM wallets WHERE user_id = ?", (user_id,))
+    row = cursor.fetchone()
+    if not row: return
+    
+    highest = row[0] or 0
+    current_card = (row[1] or "silver").strip()  # ✅ FIX: strip whitespace
+    new_card = current_card
+    
+    for threshold, tier_key, _ in TIER_THRESHOLDS:
+        if highest >= threshold and tier_key != current_card:
+            new_card = tier_key
+            break
+            
+    if new_card != current_card:
+        cursor.execute("UPDATE wallets SET active_card = ? WHERE user_id = ?", (new_card, user_id))
+        log_transaction(cursor, user_id, 0, "TIER_UPGRADE", f"Auto-upgraded to {new_card}")
+
+# ✅ FIX: Cleaned thresholds & card tiers (NO TRAILING SPACES)
+TIER_THRESHOLDS = [
+    (100_000, "gold", "Gold Elite"),
+    (300_000, "crystal", "Crystal Debit"),
+    (600_000, "plat_black", "Platinum Black"),
+]
+
+CARD_TIERS = {
+    "silver": {"threshold": 0, "name": "Standard Silver"},
+    "gold": {"threshold": 100_000, "name": "Gold Elite"},
+    "crystal": {"threshold": 300_000, "name": "Crystal Debit"},
+    "plat_black": {"threshold": 600_000, "name": "Platinum Black"},
+    "plat_pink": {"threshold": 600_000, "name": "Platinum Chérie"}
+}
 
 def make_progress_bar(percent: int) -> str:
     filled = percent // 10
@@ -23,90 +111,93 @@ class BuyOptionButton(discord.ui.Button):
         self.item_type = item_type
 
     async def callback(self, i: discord.Interaction):
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        
-        c.execute("SELECT balance FROM wallets WHERE user_id = ?", (i.user.id,))
-        bal_row = c.fetchone()
-        bal = bal_row[0] if bal_row else 0
+        with get_db_cursor() as c:
+            # Ensure wallet exists
+            c.execute("INSERT OR IGNORE INTO wallets (user_id, balance, active_card, highest_balance) VALUES (?, 0, 'silver', 0)", (i.user.id,))
+            c.execute("SELECT balance FROM wallets WHERE user_id = ?", (i.user.id,))
+            bal_row = c.fetchone()
+            bal = bal_row[0] if bal_row else 0
 
-        if self.item_type == "property":
-            c.execute("SELECT name, base_price FROM market_properties WHERE id = ?", (self.item_id,))
-            prop = c.fetchone()
-            if not prop:
-                conn.close()
-                return await i.response.send_message("❌ Invalid property ID.", ephemeral=True)
-            
-            c.execute("SELECT id FROM user_properties WHERE user_id = ? AND property_id = ?", (i.user.id, self.item_id))
-            if c.fetchone():
-                conn.close()
-                return await i.response.send_message("❌ You already own this property.", ephemeral=True)
+            if self.item_type == "property":
+                c.execute("SELECT name, base_price FROM market_properties WHERE id = ?", (self.item_id,))
+                prop = c.fetchone()
+                if not prop:
+                    return await i.response.send_message("❌ Invalid property ID.", ephemeral=True)
                 
-            if bal < prop[1]:
-                conn.close()
-                return await i.response.send_message(f"❌ Insufficient funds. You need **A$ {prop[1]:,}**.", ephemeral=True)
+                c.execute("SELECT id FROM user_properties WHERE user_id = ? AND property_id = ?", (i.user.id, self.item_id))
+                if c.fetchone():
+                    return await i.response.send_message("❌ You already own this property.", ephemeral=True)
+                    
+                if bal < prop[1]:
+                    return await i.response.send_message(f"❌ Insufficient funds. You need **A$ {prop[1]:,}**.", ephemeral=True)
+                    
+                if not atomic_balance_update(c, i.user.id, -prop[1]):
+                    return await i.response.send_message("❌ Balance updated concurrently. Please try again.", ephemeral=True)
+                log_transaction(c, i.user.id, -prop[1], "PROPERTY_PURCHASE", f"Bought {prop[0]}")
                 
-            c.execute("UPDATE wallets SET balance = balance - ? WHERE user_id = ?", (prop[1], i.user.id))
-            c.execute("INSERT INTO user_properties (user_id, property_id, quality, needs_repair) VALUES (?, ?, 20, 0)", (i.user.id, self.item_id))
-            
-            # --- MARKET LINKAGE: Real Estate Boom ---
-            try: c.execute("UPDATE stocks SET price = price + int(price * 0.02), trend = '📈 UP' WHERE symbol = 'ARE'")
-            except: pass
+                c.execute("INSERT INTO user_properties (user_id, property_id, quality, needs_repair) VALUES (?, ?, 20, 0)", (i.user.id, self.item_id))
+                
+                # --- MARKET LINKAGE: Real Estate Boom ---
+                try: c.execute("UPDATE stocks SET price = price + int(price * 0.02), trend = '<:stockup_athena:1503776772850712616> UP' WHERE symbol = 'ARE'")
+                except: pass
 
-            conn.commit()
-            conn.close()
-            await i.response.send_message(embed=discord.Embed(title="📜 Deed Acquired", description=f"You now own **{prop[0]}**!\n\n📈 *The real estate market is booming! Your purchase just drove up the price of `ARE` stock!*", color=0xffffff), ephemeral=True)
+                check_tier_upgrade(c, i.user.id)
+                await i.response.send_message(embed=discord.Embed(title="Deed Acquired", description=f"You now own **{prop[0]}**!\n\n<:stockup_athena:1503776772850712616> *The real estate market is booming! Your purchase just drove up the price of `ARE` stock!*", color=0xffffff), ephemeral=False)
 
-        elif self.item_type == "vehicle":
-            c.execute("SELECT name, price FROM market_vehicles WHERE id = ?", (self.item_id,))
-            veh = c.fetchone()
-            if not veh:
-                conn.close()
-                return await i.response.send_message("❌ Invalid vehicle ID.", ephemeral=True)
-            
-            c.execute("SELECT vehicle_id FROM user_vehicles WHERE user_id = ? AND vehicle_id = ?", (i.user.id, self.item_id))
-            if c.fetchone():
-                conn.close()
-                return await i.response.send_message("❌ You already own this vehicle.", ephemeral=True)
+            elif self.item_type == "vehicle":
+                c.execute("SELECT name, price FROM market_vehicles WHERE id = ?", (self.item_id,))
+                veh = c.fetchone()
+                if not veh:
+                    return await i.response.send_message("❌ Invalid vehicle ID.", ephemeral=True)
                 
-            if bal < veh[1]:
-                conn.close()
-                return await i.response.send_message(f"❌ Insufficient funds. You need **A$ {veh[1]:,}**.", ephemeral=True)
+                c.execute("SELECT vehicle_id FROM user_vehicles WHERE user_id = ? AND vehicle_id = ?", (i.user.id, self.item_id))
+                if c.fetchone():
+                    return await i.response.send_message("❌ You already own this vehicle.", ephemeral=True)
+                    
+                if bal < veh[1]:
+                    return await i.response.send_message(f"❌ Insufficient funds. You need **A$ {veh[1]:,}**.", ephemeral=True)
+                    
+                if not atomic_balance_update(c, i.user.id, -veh[1]):
+                    return await i.response.send_message("❌ Balance updated concurrently. Please try again.", ephemeral=True)
+                log_transaction(c, i.user.id, -veh[1], "VEHICLE_PURCHASE", f"Bought {veh[0]}")
                 
-            c.execute("UPDATE wallets SET balance = balance - ? WHERE user_id = ?", (veh[1], i.user.id))
-            c.execute("INSERT INTO user_vehicles (user_id, vehicle_id, needs_repair) VALUES (?, ?, 0)", (i.user.id, self.item_id))
-            conn.commit()
-            conn.close()
-            await i.response.send_message(embed=discord.Embed(title="<:car_athena:1501939281479073842> Keys Handed Over", description=f"You purchased a **{veh[0]}**!", color=0xffffff), ephemeral=True)
+                c.execute("INSERT INTO user_vehicles (user_id, vehicle_id, needs_repair) VALUES (?, ?, 0)", (i.user.id, self.item_id))
+                check_tier_upgrade(c, i.user.id)
+                await i.response.send_message(embed=discord.Embed(title="<:car_athena:1501939281479073842> Keys Handed Over", description=f"You purchased a **{veh[0]}**!", color=0xffffff), ephemeral=True)
 
-        elif self.item_type == "p2p":
-            lid = int(self.item_id)
-            c.execute("SELECT seller_id, item_id, price FROM p2p_listings WHERE id = ?", (lid,))
-            listing = c.fetchone()
-            if not listing:
-                conn.close()
-                return await i.response.send_message("❌ Listing not found or already sold.", ephemeral=True)
+            elif self.item_type == "p2p":
+                lid = int(self.item_id)
+                c.execute("SELECT seller_id, item_id, price FROM p2p_listings WHERE id = ?", (lid,))
+                listing = c.fetchone()
+                if not listing:
+                    return await i.response.send_message("❌ Listing not found or already sold.", ephemeral=True)
+                    
+                if bal < listing[2]:
+                    return await i.response.send_message("❌ Insufficient funds.", ephemeral=True)
+                    
+                fee = int(listing[2] * 0.02)
+                payout = listing[2] - fee
                 
-            if bal < listing[2]:
-                conn.close()
-                return await i.response.send_message("❌ Insufficient funds.", ephemeral=True)
+                # Atomic updates for both parties
+                if not atomic_balance_update(c, listing[0], payout):
+                    return await i.response.send_message("❌ Seller balance updated concurrently. Please try again.", ephemeral=True)
+                if not atomic_balance_update(c, i.user.id, -listing[2]):
+                    # Rollback seller payout if buyer fails (best effort)
+                    atomic_balance_update(c, listing[0], -payout)
+                    return await i.response.send_message("❌ Your balance updated concurrently. Please try again.", ephemeral=True)
+                    
+                log_transaction(c, listing[0], payout, "P2P_SALE", f"Sold listing #{lid}")
+                log_transaction(c, i.user.id, -listing[2], "P2P_PURCHASE", f"Bought listing #{lid}")
                 
-            fee = int(listing[2] * 0.02)
-            payout = listing[2] - fee
-            
-            c.execute("UPDATE wallets SET balance = balance + ? WHERE user_id = ?", (payout, listing[0]))
-            c.execute("UPDATE wallets SET balance = balance - ? WHERE user_id = ?", (listing[2], i.user.id))
-            c.execute("INSERT INTO user_properties (user_id, property_id, quality, needs_repair) VALUES (?, ?, 100, 0)", (i.user.id, listing[1]))
-            c.execute("DELETE FROM p2p_listings WHERE id = ?", (lid,))
+                c.execute("INSERT INTO user_properties (user_id, property_id, quality, needs_repair) VALUES (?, ?, 100, 0)", (i.user.id, listing[1]))
+                c.execute("DELETE FROM p2p_listings WHERE id = ?", (lid,))
 
-            # --- MARKET LINKAGE: Minor Real Estate Bump ---
-            try: c.execute("UPDATE stocks SET price = price + int(price * 0.01), trend = '📈 UP' WHERE symbol = 'ARE'")
-            except: pass
+                # --- MARKET LINKAGE: Minor Real Estate Bump ---
+                try: c.execute("UPDATE stocks SET price = price + int(price * 0.01), trend = '📈 UP' WHERE symbol = 'ARE'")
+                except: pass
 
-            conn.commit()
-            conn.close()
-            
-            await i.response.send_message(embed=discord.Embed(title="🤝 P2P Purchase Complete", description=f"You purchased listing #{lid} for **A$ {listing[2]:,}**!\n\n📈 *This private transfer drove up the price of `ARE` stock!*", color=0xffffff), ephemeral=True)
+                check_tier_upgrade(c, i.user.id)
+                await i.response.send_message(embed=discord.Embed(title=" P2P Purchase Complete", description=f"You purchased listing #{lid} for **A$ {listing[2]:,}**!\n\n📈 *This private transfer drove up the price of `ARE` stock!*", color=0xffffff), ephemeral=True)
 
 
 # ==========================================
@@ -128,46 +219,43 @@ class MarketplaceDropdown(discord.ui.Select):
         self.view.current_category = category
         self.view.buy_btn.disabled = False
         
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
+        with get_db_cursor() as cursor:
+            if category == "P2P":
+                cursor.execute('''SELECT l.id, m.name, l.price, l.seller_id 
+                                  FROM p2p_listings l JOIN market_properties m ON l.item_id = m.id''')
+                listings = cursor.fetchall()
+                embed = discord.Embed(title="P2P Trading Floor", color=0xffffff)
+                desc = "Direct listings from other property owners. Click **Buy** below to purchase.\n\n"
+                for lid, name, price, seller_id in listings:
+                    seller = interaction.guild.get_member(seller_id) if interaction.guild else None
+                    s_name = seller.name if seller else "Inactive User"
+                    desc += f"**{name}** `[Listing #{lid}]`\n"
+                    desc += f"**Seller:** {s_name}\n"
+                    desc += f"<:money_athena:1501918414867005511> **Price:** A$ {price:,}\n\n"
+                embed.description = desc if listings else "The trading floor is currently empty. List your properties with `/marketplace list`!"
+                
+            elif category == "Vehicles":
+                cursor.execute("SELECT id, name, price, cooldown_reduction FROM market_vehicles")
+                vehicles = cursor.fetchall()
+                embed = discord.Embed(title="Athena Showroom", color=0xffffff)
+                desc = "Luxury vehicles. Owning these reduces your `/work` cooldown.\n\n"
+                for vid, name, price, bonus in vehicles:
+                    desc += f"**{name}** `[{vid}]`\n"
+                    desc += f"**Commute Bonus:** -{bonus}m On Work Cooldown\n"
+                    desc += f"<:money_athena:1501918414867005511> **Price:** A$ {price:,}\n\n"
+                embed.description = desc
+                
+            else:
+                cursor.execute("SELECT id, name, base_price, base_rent FROM market_properties WHERE category = ?", (category,))
+                properties = cursor.fetchall()
+                embed = discord.Embed(title=f"{category} Real Estate", color=0xffffff)
+                desc = "Available deeds. Click **Buy** below to purchase.\n\n"
+                for pid, name, price, rent in properties:
+                    desc += f"**{name}** `[{pid}]`\n"
+                    desc += f"**Price:** A$ {price:,}\n"
+                    desc += f"<:money_athena:1501918414867005511> **Base Rent:** A$ {rent:,} / day\n\n"
+                embed.description = desc
 
-        if category == "P2P":
-            cursor.execute('''SELECT l.id, m.name, l.price, l.seller_id 
-                              FROM p2p_listings l JOIN market_properties m ON l.item_id = m.id''')
-            listings = cursor.fetchall()
-            embed = discord.Embed(title="P2P Trading Floor", color=0xffffff)
-            desc = "Direct listings from other property owners. Click **Buy** below to purchase.\n\n"
-            for lid, name, price, seller_id in listings:
-                seller = interaction.guild.get_member(seller_id)
-                s_name = seller.name if seller else "Inactive User"
-                desc += f"**{name}** `[Listing #{lid}]`\n"
-                desc += f"**Seller:** {s_name}\n"
-                desc += f"<:money_athena:1501918414867005511> **Price:** A$ {price:,}\n\n"
-            embed.description = desc if listings else "The trading floor is currently empty. List your properties with `/marketplace list`!"
-            
-        elif category == "Vehicles":
-            cursor.execute("SELECT id, name, price, cooldown_reduction FROM market_vehicles")
-            vehicles = cursor.fetchall()
-            embed = discord.Embed(title="Athena Showroom", color=0xffffff)
-            desc = "Luxury vehicles. Owning these reduces your `/work` cooldown.\n\n"
-            for vid, name, price, bonus in vehicles:
-                desc += f"**{name}** `[{vid}]`\n"
-                desc += f"**Commute Bonus:** -{bonus}m On Work Cooldown\n"
-                desc += f"<:money_athena:1501918414867005511> **Price:** A$ {price:,}\n\n"
-            embed.description = desc
-            
-        else:
-            cursor.execute("SELECT id, name, base_price, base_rent FROM market_properties WHERE category = ?", (category,))
-            properties = cursor.fetchall()
-            embed = discord.Embed(title=f"{category} Real Estate", color=0xffffff)
-            desc = "Available deeds. Click **Buy** below to purchase.\n\n"
-            for pid, name, price, rent in properties:
-                desc += f"**{name}** `[{pid}]`\n"
-                desc += f"**Price:** A$ {price:,}\n"
-                desc += f"<:money_athena:1501918414867005511> **Base Rent:** A$ {rent:,} / day\n\n"
-            embed.description = desc
-
-        conn.close()
         await interaction.response.edit_message(embed=embed, view=self.view)
 
 class MarketplaceView(discord.ui.View):
@@ -186,29 +274,26 @@ class MarketplaceView(discord.ui.View):
         cat = self.current_category
         if not cat: return
         
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        options_view = discord.ui.View(timeout=60)
-        
-        if cat == "Vehicles":
-            c.execute("SELECT id FROM market_vehicles")
-            for (vid,) in c.fetchall()[:25]:
-                options_view.add_item(BuyOptionButton(vid, "vehicle"))
-        elif cat == "P2P":
-            c.execute("SELECT id FROM p2p_listings")
-            for (lid,) in c.fetchall()[:25]:
-                options_view.add_item(BuyOptionButton(str(lid), "p2p"))
-        else:
-            c.execute("SELECT id FROM market_properties WHERE category = ?", (cat,))
-            for (pid,) in c.fetchall()[:25]:
-                options_view.add_item(BuyOptionButton(pid, "property"))
-                
-        conn.close()
-        
-        if len(options_view.children) == 0:
-            return await interaction.response.send_message("❌ No items available to buy in this category.", ephemeral=True)
+        with get_db_cursor() as c:
+            options_view = discord.ui.View(timeout=60)
             
-        await interaction.response.send_message("🛒 **Select an asset code to purchase:**", view=options_view, ephemeral=True)
+            if cat == "Vehicles":
+                c.execute("SELECT id FROM market_vehicles")
+                for (vid,) in c.fetchall()[:25]:
+                    options_view.add_item(BuyOptionButton(vid, "vehicle"))
+            elif cat == "P2P":
+                c.execute("SELECT id FROM p2p_listings")
+                for (lid,) in c.fetchall()[:25]:
+                    options_view.add_item(BuyOptionButton(str(lid), "p2p"))
+            else:
+                c.execute("SELECT id FROM market_properties WHERE category = ?", (cat,))
+                for (pid,) in c.fetchall()[:25]:
+                    options_view.add_item(BuyOptionButton(pid, "property"))
+                    
+            if len(options_view.children) == 0:
+                return await interaction.response.send_message(" No items available to buy in this category.", ephemeral=True)
+                
+            await interaction.response.send_message(" **Select an asset code to purchase:**", view=options_view, ephemeral=True)
 
 
 # ==========================================
@@ -222,94 +307,85 @@ class Marketplace(commands.Cog):
         self.maintenance_sweep.start()
 
     def setup_db(self):
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        
-        cursor.execute('CREATE TABLE IF NOT EXISTS market_properties (id TEXT PRIMARY KEY, name TEXT, category TEXT, base_price INTEGER, base_rent INTEGER)')
-        cursor.execute('CREATE TABLE IF NOT EXISTS user_properties (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, property_id TEXT, quality INTEGER DEFAULT 20, needs_repair INTEGER DEFAULT 0, UNIQUE(user_id, property_id))')
-        
-        cursor.execute('CREATE TABLE IF NOT EXISTS market_vehicles (id TEXT PRIMARY KEY, name TEXT, price INTEGER, cooldown_reduction INTEGER)')
-        cursor.execute('CREATE TABLE IF NOT EXISTS user_vehicles (user_id INTEGER, vehicle_id TEXT, needs_repair INTEGER DEFAULT 0, UNIQUE(user_id, vehicle_id))')
-        
-        cursor.execute('CREATE TABLE IF NOT EXISTS p2p_listings (id INTEGER PRIMARY KEY AUTOINCREMENT, seller_id INTEGER, item_id TEXT, price INTEGER)')
-        
-        try: cursor.execute("ALTER TABLE user_properties ADD COLUMN needs_repair INTEGER DEFAULT 0")
-        except: pass
-        try: cursor.execute("ALTER TABLE user_vehicles ADD COLUMN needs_repair INTEGER DEFAULT 0")
-        except: pass
-
-        vehicles = [
-            ('CAR1', 'Mini Cooper S', 15000, 20),
-            ('CAR2', 'Land Rover Defender', 45000, 30),
-            ('CAR3', 'Jaguar F-Type', 95000, 35),
-            ('CAR4', 'Aston Martin DB12', 185000, 40),
-            ('CAR5', 'Chevrolet Corvette ZR1', 195000, 45),
-            ('CAR6', 'Rolls-Royce Cullinan', 250000, 50),
-            ('CAR7', 'Ferrari SF90 Stradale', 350000, 60)
-        ]
-        cursor.executemany("INSERT OR REPLACE INTO market_vehicles VALUES (?, ?, ?, ?)", vehicles)
-        
-        properties = [
-            ('RES1', 'The Kensington Flat', 'Residential', 25000, 1250),
-            ('RES2', 'Camden Townhouse', 'Residential', 75000, 3750),
-            ('RES3', 'Cobblestone Mews', 'Residential', 150000, 7500),
-            ('RES4', 'Berkshire Cottage', 'Residential', 200000, 10000),
-            ('COM1', "Marks and Spencer's (M&S)", 'Commercial', 350000, 17500),
-            ('COM2', 'Block & Quayle (B&Q)', 'Commercial', 500000, 25000),
-            ('COM3', 'Greggs', 'Commercial', 150000, 7500),
-            ('COM4', 'Weatherspoons Pub', 'Commercial', 250000, 12500),
-            ('COM5', 'Peppa Pig World', 'Commercial', 1500000, 75000),
-            ('ELI1', 'The Windsor Estate', 'Elite', 5000000, 250000),
-            ('ELI2', 'Chelsea Penthouse', 'Elite', 8000000, 400000),
-            ('ELI3', 'Buckingham Manor', 'Elite', 15000000, 750000)
-        ]
-        cursor.executemany("INSERT OR REPLACE INTO market_properties VALUES (?, ?, ?, ?, ?)", properties)
+        with get_db_cursor() as cursor:
+            cursor.execute('CREATE TABLE IF NOT EXISTS market_properties (id TEXT PRIMARY KEY, name TEXT, category TEXT, base_price INTEGER, base_rent INTEGER)')
+            cursor.execute('CREATE TABLE IF NOT EXISTS user_properties (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, property_id TEXT, quality INTEGER DEFAULT 20, needs_repair INTEGER DEFAULT 0, UNIQUE(user_id, property_id))')
             
-        conn.commit()
-        conn.close()
+            cursor.execute('CREATE TABLE IF NOT EXISTS market_vehicles (id TEXT PRIMARY KEY, name TEXT, price INTEGER, cooldown_reduction INTEGER)')
+            cursor.execute('CREATE TABLE IF NOT EXISTS user_vehicles (user_id INTEGER, vehicle_id TEXT, needs_repair INTEGER DEFAULT 0, UNIQUE(user_id, vehicle_id))')
+            
+            cursor.execute('CREATE TABLE IF NOT EXISTS p2p_listings (id INTEGER PRIMARY KEY AUTOINCREMENT, seller_id INTEGER, item_id TEXT, price INTEGER)')
+            
+            # Ensure transactions table exists
+            cursor.execute('''CREATE TABLE IF NOT EXISTS transactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER,
+                amount INTEGER, type TEXT, description TEXT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )''')
+            
+            try: cursor.execute("ALTER TABLE user_properties ADD COLUMN needs_repair INTEGER DEFAULT 0")
+            except: pass
+            try: cursor.execute("ALTER TABLE user_vehicles ADD COLUMN needs_repair INTEGER DEFAULT 0")
+            except: pass
+
+            vehicles = [
+                ('CAR1', 'Mini Cooper S', 15000, 20),
+                ('CAR2', 'Land Rover Defender', 45000, 30),
+                ('CAR3', 'Jaguar F-Type', 95000, 35),
+                ('CAR4', 'Aston Martin DB12', 185000, 40),
+                ('CAR5', 'Chevrolet Corvette ZR1', 195000, 45),
+                ('CAR6', 'Rolls-Royce Cullinan', 250000, 50),
+                ('CAR7', 'Ferrari SF90 Stradale', 350000, 60)
+            ]
+            cursor.executemany("INSERT OR REPLACE INTO market_vehicles VALUES (?, ?, ?, ?)", vehicles)
+            
+            properties = [
+                ('RES1', 'The Kensington Flat', 'Residential', 25000, 1250),
+                ('RES2', 'Camden Townhouse', 'Residential', 75000, 3750),
+                ('RES3', 'Cobblestone Mews', 'Residential', 150000, 7500),
+                ('RES4', 'Berkshire Cottage', 'Residential', 200000, 10000),
+                ('COM1', "Marks and Spencer's (M&S)", 'Commercial', 350000, 17500),
+                ('COM2', 'Block & Quayle (B&Q)', 'Commercial', 500000, 25000),
+                ('COM3', 'Greggs', 'Commercial', 150000, 7500),
+                ('COM4', 'Weatherspoons Pub', 'Commercial', 250000, 12500),
+                ('COM5', 'Peppa Pig World', 'Commercial', 1500000, 75000),
+                ('COM6', 'Ferrari Land', 'Commercial', 3000000, 95000),
+                ('ELI1', 'The Windsor Estate', 'Elite', 5000000, 250000),
+                ('ELI2', 'Chelsea Penthouse', 'Elite', 8000000, 400000),
+                ('ELI3', 'Buckingham Manor', 'Elite', 15000000, 750000)
+            ]
+            cursor.executemany("INSERT OR REPLACE INTO market_properties VALUES (?, ?, ?, ?, ?)", properties)
 
     # ==========================================
-    # 📉 AUTOMATED BACKGROUND TASKS
+    #  AUTOMATED BACKGROUND TASKS
     # ==========================================
     @tasks.loop(hours=24)
     async def rent_collection(self):
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute('''SELECT u.user_id, m.base_rent, u.quality 
-                          FROM user_properties u JOIN market_properties m ON u.property_id = m.id 
-                          WHERE u.needs_repair = 0''')
-        for uid, base_rent, quality in cursor.fetchall():
-            mult = 1.0 + (1.5 * (quality / 100.0))
-            rent = int(base_rent * mult)
-            # Ensure wallet exists
-            cursor.execute("INSERT OR IGNORE INTO wallets (user_id, balance) VALUES (?, 0)", (uid,))
-            cursor.execute("UPDATE wallets SET balance = balance + ?, highest_balance = MAX(highest_balance, balance + ?) WHERE user_id = ?", (rent, rent, uid))
-# Now check for tier upgrade (we can call a helper that works with a cursor)
-# For simplicity, we'll just update the card silently here.
-
-# We'll implement a quick inline check:
-            cursor.execute("SELECT highest_balance FROM wallets WHERE user_id = ?", (uid,))
-            new_highest = cursor.fetchone()[0]
-            for threshold, tier_key in [(100000,"gold"),(300000,"crystal"),(600000,"plat_black")]:
-                if new_highest >= threshold and new_highest - rent < threshold:   # crossed threshold
-                    cursor.execute("UPDATE wallets SET active_card = ? WHERE user_id = ?", (tier_key, uid))
-                    break   # only upgrade once
-            conn.commit()
-            conn.close()
+        with get_db_cursor() as cursor:
+            cursor.execute('''SELECT u.user_id, m.base_rent, u.quality 
+                              FROM user_properties u JOIN market_properties m ON u.property_id = m.id 
+                              WHERE u.needs_repair = 0''')
+            for uid, base_rent, quality in cursor.fetchall():
+                mult = 1.0 + (1.5 * (quality / 100.0))
+                rent = int(base_rent * mult)
+                
+                # Atomic balance update with highest_balance tracking
+                if atomic_balance_update(cursor, uid, rent):
+                    log_transaction(cursor, uid, rent, "RENT_INCOME", f"Daily rent from property")
+                    check_tier_upgrade(cursor, uid)
 
     @tasks.loop(hours=24)
     async def maintenance_sweep(self):
-        conn = sqlite3.connect(DB_PATH); cursor = conn.cursor()
-        
-        cursor.execute("SELECT id FROM user_properties WHERE needs_repair = 0")
-        for (pid,) in cursor.fetchall():
-            if random.random() < 0.10: cursor.execute("UPDATE user_properties SET needs_repair = 1 WHERE id = ?", (pid,))
-                
-        cursor.execute("SELECT user_id, vehicle_id FROM user_vehicles WHERE needs_repair = 0")
-        for uid, vid in cursor.fetchall():
-            if random.random() < 0.10: cursor.execute("UPDATE user_vehicles SET needs_repair = 1 WHERE user_id = ? AND vehicle_id = ?", (uid, vid))
-                
-        conn.commit(); conn.close()
+        with get_db_cursor() as cursor:
+            cursor.execute("SELECT id FROM user_properties WHERE needs_repair = 0")
+            for (pid,) in cursor.fetchall():
+                if random.random() < 0.10: 
+                    cursor.execute("UPDATE user_properties SET needs_repair = 1 WHERE id = ?", (pid,))
+                    
+            cursor.execute("SELECT user_id, vehicle_id FROM user_vehicles WHERE needs_repair = 0")
+            for uid, vid in cursor.fetchall():
+                if random.random() < 0.10: 
+                    cursor.execute("UPDATE user_vehicles SET needs_repair = 1 WHERE user_id = ? AND vehicle_id = ?", (uid, vid))
 
     @rent_collection.before_loop
     @maintenance_sweep.before_loop
@@ -319,13 +395,13 @@ class Marketplace(commands.Cog):
     # 🔍 AUTOCOMPLETES
     # ==========================================
     async def owned_prop_auto(self, i: discord.Interaction, current: str) -> List[app_commands.Choice[str]]:
-        conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-        c.execute("SELECT m.id, m.name FROM user_properties u JOIN market_properties m ON u.property_id = m.id WHERE u.user_id = ?", (i.user.id,))
-        res = c.fetchall(); conn.close()
+        with get_db_cursor() as c:
+            c.execute("SELECT m.id, m.name FROM user_properties u JOIN market_properties m ON u.property_id = m.id WHERE u.user_id = ?", (i.user.id,))
+            res = c.fetchall()
         return [app_commands.Choice(name=f"{n} ({id})", value=id) for id, n in res if current.lower() in n.lower()][:25]
 
     # ==========================================
-    # 🛍️ COMMANDS
+    # ️ COMMANDS
     # ==========================================
     market_group = app_commands.Group(name="marketplace", description="Buy assets and manage your empire")
 
@@ -338,40 +414,47 @@ class Marketplace(commands.Cog):
     @app_commands.autocomplete(property_id=owned_prop_auto)
     async def list_p2p(self, i: discord.Interaction, property_id: str, price: int):
         pid = property_id.upper()
-        conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-        c.execute("SELECT base_price FROM market_properties WHERE id = ?", (pid,))
-        cost = c.fetchone()[0]
-        if price < cost: return await i.response.send_message(f"❌ Price cannot be lower than original cost (A$ {cost:,}).", ephemeral=True)
+        with get_db_cursor() as c:
+            c.execute("SELECT base_price FROM market_properties WHERE id = ?", (pid,))
+            cost_row = c.fetchone()
+            if not cost_row: return await i.response.send_message("❌ Invalid property ID.", ephemeral=True)
+            cost = cost_row[0]
+            if price < cost: return await i.response.send_message(f"❌ Price cannot be lower than original cost (A$ {cost:,}).", ephemeral=True)
+            
+            c.execute("SELECT id FROM user_properties WHERE user_id = ? AND property_id = ?", (i.user.id, pid))
+            if not c.fetchone(): return await i.response.send_message("❌ You do not own this property.", ephemeral=True)
+            
+            c.execute("INSERT INTO p2p_listings (seller_id, item_id, price) VALUES (?, ?, ?)", (i.user.id, pid, price))
+            c.execute("DELETE FROM user_properties WHERE user_id = ? AND property_id = ?", (i.user.id, pid))
+            log_transaction(c, i.user.id, 0, "P2P_LISTED", f"Listed {pid} for A$ {price:,}")
         
-        c.execute("INSERT INTO p2p_listings (seller_id, item_id, price) VALUES (?, ?, ?)", (i.user.id, pid, price))
-        c.execute("DELETE FROM user_properties WHERE user_id = ? AND property_id = ?", (i.user.id, pid))
-        conn.commit(); conn.close()
         await i.response.send_message(embed=discord.Embed(title="<:house_athena:1501918600787922944> Asset Listed", description=f"Property listed for A$ {price:,} on the trading floor.", color=0xffffff))
 
     @market_group.command(name="repair", description="Pay A$ 500 per broken asset to restore your empire")
     async def repair_assets(self, i: discord.Interaction):
-        conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-        c.execute("SELECT id FROM user_properties WHERE user_id = ? AND needs_repair = 1", (i.user.id,))
-        broken_props = c.fetchall()
-        c.execute("SELECT vehicle_id FROM user_vehicles WHERE user_id = ? AND needs_repair = 1", (i.user.id,))
-        broken_vehs = c.fetchall()
-        
-        total_broken = len(broken_props) + len(broken_vehs)
-        if total_broken == 0:
-            conn.close()
-            return await i.response.send_message("✅ All your assets are in perfect condition!", ephemeral=True)
+        with get_db_cursor() as c:
+            c.execute("SELECT id FROM user_properties WHERE user_id = ? AND needs_repair = 1", (i.user.id,))
+            broken_props = c.fetchall()
+            c.execute("SELECT vehicle_id FROM user_vehicles WHERE user_id = ? AND needs_repair = 1", (i.user.id,))
+            broken_vehs = c.fetchall()
             
-        cost = total_broken * 500
-        c.execute("SELECT balance FROM wallets WHERE user_id = ?", (i.user.id,))
-        bal = c.fetchone()[0]
-        if bal < cost:
-            conn.close()
-            return await i.response.send_message(f"❌ You need A$ {cost:,} to repair your {total_broken} broken assets.", ephemeral=True)
+            total_broken = len(broken_props) + len(broken_vehs)
+            if total_broken == 0:
+                return await i.response.send_message("✅ All your assets are in perfect condition!", ephemeral=True)
+                
+            cost = total_broken * 500
+            c.execute("SELECT balance FROM wallets WHERE user_id = ?", (i.user.id,))
+            bal_row = c.fetchone()
+            bal = bal_row[0] if bal_row else 0
+            if bal < cost:
+                return await i.response.send_message(f"❌ You need A$ {cost:,} to repair your {total_broken} broken assets.", ephemeral=True)
+                
+            if not atomic_balance_update(c, i.user.id, -cost):
+                return await i.response.send_message("❌ Balance updated concurrently. Please try again.", ephemeral=True)
+            log_transaction(c, i.user.id, -cost, "ASSET_REPAIR", f"Repaired {total_broken} assets")
             
-        c.execute("UPDATE wallets SET balance = balance - ? WHERE user_id = ?", (cost, i.user.id))
-        c.execute("UPDATE user_properties SET needs_repair = 0 WHERE user_id = ?", (i.user.id,))
-        c.execute("UPDATE user_vehicles SET needs_repair = 0 WHERE user_id = ?", (i.user.id,))
-        conn.commit(); conn.close()
+            c.execute("UPDATE user_properties SET needs_repair = 0 WHERE user_id = ?", (i.user.id,))
+            c.execute("UPDATE user_vehicles SET needs_repair = 0 WHERE user_id = ?", (i.user.id,))
         
         e = discord.Embed(title="🔧 Maintenance Complete", description=f"You paid **A$ {cost:,}** to fully service your empire. Rent yields and work bonuses have resumed!", color=0xffffff)
         await i.response.send_message(embed=e)
@@ -380,23 +463,28 @@ class Marketplace(commands.Cog):
     @app_commands.autocomplete(property_id=owned_prop_auto)
     async def renovate(self, i: discord.Interaction, property_id: str):
         pid = property_id.upper()
-        conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-        c.execute("SELECT u.quality, m.base_price, m.name FROM user_properties u JOIN market_properties m ON u.property_id = m.id WHERE u.user_id = ? AND u.property_id = ?", (i.user.id, pid))
-        d = c.fetchone()
-        if not d or d[0] >= 100: return await i.response.send_message("❌ Max quality reached or not owned.", ephemeral=True)
-        cost = int(d[1] * 0.10)
-        c.execute("SELECT balance FROM wallets WHERE user_id = ?", (i.user.id,))
-        if c.fetchone()[0] < cost: return await i.response.send_message(f"❌ Needs A$ {cost:,}.", ephemeral=True)
-        c.execute("UPDATE wallets SET balance = balance - ? WHERE user_id = ?", (cost, i.user.id))
-        c.execute("UPDATE user_properties SET quality = quality + 20 WHERE user_id = ? AND property_id = ?", (i.user.id, pid))
-        conn.commit(); conn.close()
-        await i.response.send_message(embed=discord.Embed(title="🔨 Renovation Shift Complete", description=f"Invested into **{d[2]}**.\n{make_progress_bar(min(100, d[0]+20))}", color=0xffffff))
+        with get_db_cursor() as c:
+            c.execute("SELECT u.quality, m.base_price, m.name FROM user_properties u JOIN market_properties m ON u.property_id = m.id WHERE u.user_id = ? AND u.property_id = ?", (i.user.id, pid))
+            d = c.fetchone()
+            if not d or d[0] >= 100: return await i.response.send_message("❌ Max quality reached or not owned.", ephemeral=True)
+            cost = int(d[1] * 0.10)
+            c.execute("SELECT balance FROM wallets WHERE user_id = ?", (i.user.id,))
+            bal_row = c.fetchone()
+            if not bal_row or bal_row[0] < cost: return await i.response.send_message(f"❌ Needs A$ {cost:,}.", ephemeral=True)
+            
+            if not atomic_balance_update(c, i.user.id, -cost):
+                return await i.response.send_message("❌ Balance updated concurrently. Please try again.", ephemeral=True)
+            log_transaction(c, i.user.id, -cost, "PROPERTY_RENOVATION", f"Renovated {d[2]}")
+            
+            c.execute("UPDATE user_properties SET quality = quality + 20 WHERE user_id = ? AND property_id = ?", (i.user.id, pid))
+        
+        await i.response.send_message(embed=discord.Embed(title=" Renovation Shift Complete", description=f"Invested into **{d[2]}**.\n{make_progress_bar(min(100, d[0]+20))}", color=0xffffff))
 
     @market_group.command(name="portfolio", description="View your real estate empire")
     async def portfolio(self, i: discord.Interaction):
-        conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-        c.execute("SELECT m.name, u.quality, m.base_rent, u.needs_repair FROM user_properties u JOIN market_properties m ON u.property_id = m.id WHERE u.user_id = ?", (i.user.id,))
-        properties = c.fetchall(); conn.close()
+        with get_db_cursor() as c:
+            c.execute("SELECT m.name, u.quality, m.base_rent, u.needs_repair FROM user_properties u JOIN market_properties m ON u.property_id = m.id WHERE u.user_id = ?", (i.user.id,))
+            properties = c.fetchall()
         if not properties: return await i.response.send_message("You do not own any real estate.", ephemeral=True)
 
         e = discord.Embed(title=f"{i.user.name}'s Real Estate", color=0xffffff)
@@ -405,7 +493,7 @@ class Marketplace(commands.Cog):
         for name, quality, base_rent, repair in properties:
             actual_rent = int(base_rent * (1.0 + (1.5 * (quality / 100.0)))) if not repair else 0
             total_rent += actual_rent
-            status = "🚨 **NEEDS SERVICE (Rent Paused)**" if repair else "✅ Active"
+            status = "**NEEDS SERVICE (Rent Paused)**" if repair else "✅ Active"
             desc += f"**{name}**\n{make_progress_bar(quality)}\n**Status:** {status}\n<:money_athena:1501918414867005511> **Daily Rent:** A$ {actual_rent:,}\n\n"
             
         desc += f"**Total Daily Rent:** `A$ {total_rent:,}`"
@@ -414,15 +502,15 @@ class Marketplace(commands.Cog):
 
     @app_commands.command(name="garage", description="View your luxury vehicle collection")
     async def garage(self, i: discord.Interaction):
-        conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-        c.execute("SELECT m.name, u.needs_repair, m.cooldown_reduction FROM user_vehicles u JOIN market_vehicles m ON u.vehicle_id = m.id WHERE u.user_id = ?", (i.user.id,))
-        vehicles = c.fetchall(); conn.close()
+        with get_db_cursor() as c:
+            c.execute("SELECT m.name, u.needs_repair, m.cooldown_reduction FROM user_vehicles u JOIN market_vehicles m ON u.vehicle_id = m.id WHERE u.user_id = ?", (i.user.id,))
+            vehicles = c.fetchall()
         if not vehicles: return await i.response.send_message("You don't own any vehicles. Visit `/marketplace browse` to buy one!", ephemeral=True)
 
-        e = discord.Embed(title=f"{i.user.name}'s Garage", color=0xffffff)
+        e = discord.Embed(title=f"꒰ა {i.user.name}'s Garage ⸝⸝", color=0xffffff)
         desc = ""
         for name, repair, bonus in vehicles:
-            status = "🚨 **NEEDS SERVICE (Bonus Paused)**" if repair else "Active"
+            status = "**NEEDS SERVICE (Bonus Paused)**" if repair else "Active"
             desc += f"<:car_athena:1501939281479073842> **{name}**\n**Status:** {status}\n**Commute Bonus:** -{bonus}m Work Cooldown\n\n"
             
         e.description = desc
@@ -432,19 +520,25 @@ class Marketplace(commands.Cog):
     @app_commands.command(name="networth", description="Calculate your total empire valuation")
     async def networth(self, i: discord.Interaction, user: Optional[discord.Member] = None):
         t = user or i.user
-        conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-        c.execute("SELECT balance FROM wallets WHERE user_id = ?", (t.id,)); bal_row = c.fetchone()
-        bal = bal_row[0] if bal_row else 0
-        c.execute("SELECT SUM(m.base_price) FROM user_properties u JOIN market_properties m ON u.property_id = m.id WHERE u.user_id = ?", (t.id,)); prop_v = c.fetchone()[0] or 0
-        c.execute("SELECT SUM(m.price) FROM user_vehicles u JOIN market_vehicles m ON u.vehicle_id = m.id WHERE u.user_id = ?", (t.id,)); veh_v = c.fetchone()[0] or 0
-        try:
-            c.execute("SELECT SUM(p.shares * s.price) FROM portfolio p JOIN stocks s ON p.symbol = s.symbol WHERE p.user_id = ?", (t.id,))
-            stock_v = c.fetchone()[0] or 0
-        except: stock_v = 0
-        conn.close()
+        with get_db_cursor() as c:
+            c.execute("SELECT balance FROM wallets WHERE user_id = ?", (t.id,))
+            bal_row = c.fetchone()
+            bal = bal_row[0] if bal_row else 0
+            
+            c.execute("SELECT SUM(m.base_price) FROM user_properties u JOIN market_properties m ON u.property_id = m.id WHERE u.user_id = ?", (t.id,))
+            prop_v = c.fetchone()[0] or 0
+            
+            c.execute("SELECT SUM(m.price) FROM user_vehicles u JOIN market_vehicles m ON u.vehicle_id = m.id WHERE u.user_id = ?", (t.id,))
+            veh_v = c.fetchone()[0] or 0
+            
+            try:
+                c.execute("SELECT SUM(p.shares * s.price) FROM portfolio p JOIN stocks s ON p.symbol = s.symbol WHERE p.user_id = ?", (t.id,))
+                stock_v = c.fetchone()[0] or 0
+            except: stock_v = 0
+            
         total = bal + prop_v + veh_v + stock_v
-        e = discord.Embed(title=f"{t.name}'s Net Worth", color=0xffffff)
-        e.add_field(name="Liquid Capital", value=f"<:money_athena:1501918414867005511> A$ {bal:,}\n\u200b", inline=False)
+        e = discord.Embed(title=f"꒰ა {t.name}'s Networth  ⸝⸝", color=0xffffff)
+        e.add_field(name="Liquid Capital", value=f"<:money_athena:1501918414867005511> A$ {bal:,}\n", inline=False)
         e.add_field(name="Asset Valuation", value=f"<:house_athena:1501918600787922944> Real Estate: A$ {prop_v:,}\n<:car_athena:1501939281479073842> Vehicles: A$ {veh_v:,}\n<:stocks_athena:1501958537067364464> Stocks: A$ {stock_v:,}", inline=False)
         e.description = f"**Total Valuation:**\n# A$ {total:,}"; e.set_thumbnail(url=t.display_avatar.url)
         await i.response.send_message(embed=e)
@@ -452,24 +546,24 @@ class Marketplace(commands.Cog):
     @app_commands.command(name="leaderboard", description="View the Top 10 High Net Worth Individuals")
     async def leaderboard(self, i: discord.Interaction):
         await i.response.defer()
-        conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-        nw = {}
-        c.execute("SELECT user_id, balance FROM wallets")
-        for u, b in c.fetchall(): nw[u] = b
-        c.execute("SELECT u.user_id, m.base_price FROM user_properties u JOIN market_properties m ON u.property_id = m.id")
-        for u, p in c.fetchall(): nw[u] = nw.get(u,0) + p
-        c.execute("SELECT u.user_id, m.price FROM user_vehicles u JOIN market_vehicles m ON u.vehicle_id = m.id")
-        for u, p in c.fetchall(): nw[u] = nw.get(u,0) + p
-        try:
-            c.execute("SELECT p.user_id, p.shares, s.price FROM portfolio p JOIN stocks s ON p.symbol = s.symbol")
-            for u, s, p in c.fetchall(): nw[u] = nw.get(u,0) + (s*p)
-        except: pass
-        conn.close()
+        with get_db_cursor() as c:
+            nw = {}
+            c.execute("SELECT user_id, balance FROM wallets")
+            for u, b in c.fetchall(): nw[u] = b
+            c.execute("SELECT u.user_id, m.base_price FROM user_properties u JOIN market_properties m ON u.property_id = m.id")
+            for u, p in c.fetchall(): nw[u] = nw.get(u,0) + p
+            c.execute("SELECT u.user_id, m.price FROM user_vehicles u JOIN market_vehicles m ON u.vehicle_id = m.id")
+            for u, p in c.fetchall(): nw[u] = nw.get(u,0) + p
+            try:
+                c.execute("SELECT p.user_id, p.shares, s.price FROM portfolio p JOIN stocks s ON p.symbol = s.symbol")
+                for u, s, p in c.fetchall(): nw[u] = nw.get(u,0) + (s*p)
+            except: pass
+            
         sorted_nw = sorted(nw.items(), key=lambda x: x[1], reverse=True)[:10]
         desc = ""
         for rank, (uid, val) in enumerate(sorted_nw, 1):
             user = self.bot.get_user(uid)
             desc += f"`#{rank}` **{user.name if user else 'Unknown'}**\n<:money_athena:1501918414867005511> A$ {val:,}\n\n"
-        await i.followup.send(embed=discord.Embed(title="Wealth Leaderboard", description=desc or "No data.", color=0xffffff))
+        await i.followup.send(embed=discord.Embed(title="꒰ა Wealth Leaderboard  ⸝⸝", description=desc or "No data.", color=0xffffff))
 
 async def setup(bot): await bot.add_cog(Marketplace(bot))
