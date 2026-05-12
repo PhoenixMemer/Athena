@@ -324,6 +324,12 @@ class Marketplace(commands.Cog):
                 amount INTEGER, type TEXT, description TEXT,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
             )''')
+
+            # Cycle tracker for rent guard
+            cursor.execute('''CREATE TABLE IF NOT EXISTS cycle_tracker (
+                key TEXT PRIMARY KEY,
+                last_run REAL
+            )''')
             
             try: cursor.execute("ALTER TABLE user_properties ADD COLUMN needs_repair INTEGER DEFAULT 0")
             except: pass
@@ -361,38 +367,29 @@ class Marketplace(commands.Cog):
     # ==========================================
     #  AUTOMATED BACKGROUND TASKS
     # ==========================================
-
-    # marketplace.py (and similarly for invest.py)
-
+    # ==========================================
+    #  AUTOMATED BACKGROUND TASKS
+    # ==========================================
     @tasks.loop(hours=24)
     async def rent_collection(self):
         with get_db_cursor() as cursor:
-        # ---- GUARD ----
-            cursor.execute("SELECT value FROM config WHERE key = 'last_rent_cycle'")
-            row = cursor.fetchone()
+            # ---- GUARD: only run once per real 24h ----
             now = time.time()
-        if row and (now - float(row[0])) < 86400:
-            return  # already ran today
-        cursor.execute("INSERT OR REPLACE INTO config (key, value) VALUES ('last_rent_cycle', ?)", (str(now),))
-        # ---- END GUARD ----
+            cursor.execute("SELECT last_run FROM cycle_tracker WHERE key = 'last_rent_cycle'")
+            row = cursor.fetchone()
+            if row and (now - row[0]) < 86400:
+                return  # already ran today
+            cursor.execute("INSERT OR REPLACE INTO cycle_tracker (key, last_run) VALUES ('last_rent_cycle', ?)", (now,))
+            # ---- END GUARD ----
 
-        # original rent logic...
-
-
-
-    @tasks.loop(hours=24)
-    async def rent_collection(self):
-        with get_db_cursor() as cursor:
             cursor.execute('''SELECT u.user_id, m.base_rent, u.quality 
                               FROM user_properties u JOIN market_properties m ON u.property_id = m.id 
                               WHERE u.needs_repair = 0''')
             for uid, base_rent, quality in cursor.fetchall():
                 mult = 1.0 + (1.5 * (quality / 100.0))
                 rent = int(base_rent * mult)
-                
-                # Atomic balance update with highest_balance tracking
                 if atomic_balance_update(cursor, uid, rent):
-                    log_transaction(cursor, uid, rent, "RENT_INCOME", f"Daily rent from property")
+                    log_transaction(cursor, uid, rent, "RENT_INCOME", "Daily rent from property")
                     check_tier_upgrade(cursor, uid)
 
     @tasks.loop(hours=24)

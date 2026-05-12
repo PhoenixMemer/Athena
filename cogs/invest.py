@@ -121,6 +121,12 @@ class Investments(commands.Cog):
                 user_id INTEGER, symbol TEXT, shares INTEGER, 
                 average_buy_price REAL DEFAULT 0, UNIQUE(user_id, symbol)
             )''')
+
+                        # Cycle tracker for rent guard
+            cursor.execute('''CREATE TABLE IF NOT EXISTS cycle_tracker (
+                key TEXT PRIMARY KEY,
+                last_run REAL
+            )''')
             
             # Ensure transactions table exists (in case economy.py hasn't run yet)
             cursor.execute('''CREATE TABLE IF NOT EXISTS transactions (
@@ -154,29 +160,21 @@ class Investments(commands.Cog):
                 trend = "<:stockup_athena:1503776772850712616> UP" if new_price > price else "<:stockdown_athena:1503776838789501171> DOWN" if new_price < price else "➖ FLAT"
                 cursor.execute("UPDATE stocks SET price = ?, trend = ? WHERE symbol = ?", (new_price, trend, sym))
 
-    # marketplace.py (and similarly for invest.py)
-
-    @tasks.loop(hours=24)
-    async def rent_collection(self):
-        with get_db_cursor() as cursor:
-        # ---- GUARD ----
-            cursor.execute("SELECT value FROM config WHERE key = 'last_rent_cycle'")
-            row = cursor.fetchone()
-            now = time.time()
-            if row and (now - float(row[0])) < 86400:
-                return  # already ran today
-            cursor.execute("INSERT OR REPLACE INTO config (key, value) VALUES ('last_rent_cycle', ?)", (str(now),))
-        # ---- END GUARD ----
-
-        # original rent logic...
-
     @tasks.loop(hours=24)
     async def dividend_payouts(self):
         with get_db_cursor() as cursor:
+# ---- GUARD: only run once per real 24h ----
+            now = time.time()
+            cursor.execute("SELECT last_run FROM cycle_tracker WHERE key = 'last_div_cycle'")
+            row = cursor.fetchone()
+            if row and (now - row[0]) < 86400:
+                return  # already paid today
+            cursor.execute("INSERT OR REPLACE INTO cycle_tracker (key, last_run) VALUES ('last_div_cycle', ?)", (now,))
+        # ---- END GUARD ----
+
             cursor.execute("SELECT p.user_id, p.shares, s.price, p.symbol FROM portfolio p JOIN stocks s ON p.symbol = s.symbol")
             holdings = cursor.fetchall()
 
-            # Aggregate payouts per user to minimize DB writes
             user_payouts = {}
             for uid, shares, price, sym in holdings:
                 yield_rate = {"CRV": 0.01, "MIMU": 0.05, "ARE": 0.03, "PAL": 0.04}.get(sym, 0.02)
@@ -184,20 +182,13 @@ class Investments(commands.Cog):
                 if payout > 0:
                     user_payouts[uid] = user_payouts.get(uid, 0) + payout
 
-            # Apply atomic updates & tier checks
             for uid, amount in user_payouts.items():
                 max_retries = 3
                 for _ in range(max_retries):
                     if atomic_balance_update(cursor, uid, amount):
                         log_transaction(cursor, uid, amount, "DIVIDEND", "Daily portfolio yield")
                         break
-                
                 apply_tier_upgrade(cursor, uid)
-
-    @market_fluctuation.before_loop
-    @dividend_payouts.before_loop
-    async def before_tasks(self):
-        await self.bot.wait_until_ready()
 
     # ==========================================
     # 🔍 AUTOCOMPLETE FUNCTIONS
