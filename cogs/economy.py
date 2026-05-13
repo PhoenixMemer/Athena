@@ -130,7 +130,7 @@ class StakingGuideView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="How does Staking work?", style=discord.ButtonStyle.secondary, emoji="")
+    @discord.ui.button(label="How does Staking work?", style=discord.ButtonStyle.secondary)
     async def guide_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         embed = discord.Embed(title="<:athenacoin:1503804322280902767> Athena Staking Guide <:athenacoin:1503804322280902767>", color=0xffffff)
         embed.description = (

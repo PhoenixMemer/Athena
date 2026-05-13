@@ -228,7 +228,7 @@ class Investments(commands.Cog):
 
         embed = discord.Embed(title="꒰ა Athena Stock Exchange  ⸝⸝", color=0xffffff, description="*Prices fluctuate naturally every 2 hours based on asset volatility. Dividends are paid every 24H.*")
         for sym, name, price, trend, vol in stocks:
-            risk = " Low" if vol <= 5 else " Med" if vol <= 20 else "🔴 High"
+            risk = " Low" if vol <= 5 else " Med" if vol <= 20 else " High"
             div = {"CRV": "1%", "MIMU": "5%", "ARE": "3%", "PAL": "4%"}.get(sym, "2%")
             
             embed.add_field(
