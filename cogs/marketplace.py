@@ -205,6 +205,41 @@ class BuyOptionButton(discord.ui.Button):
 # ==========================================
 # 🏛️ UI COMPONENTS (DROPDOWN + BUY BTN)
 # ==========================================
+class BannerModal(discord.ui.Modal, title="Customize Profile Banner"):
+    banner_url = discord.ui.TextInput(
+        label="Image URL (Must end in .png, .jpg, .gif)",
+        placeholder="e.g https://media.discordapp.net/attachments/...",
+        required=True,
+        max_length=500
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        url = self.banner_url.value
+        
+        # Basic validation to ensure Discord can actually embed it
+        if not (url.startswith("http") and any(ext in url.lower() for ext in [".png", ".jpg", ".jpeg", ".gif"])):
+            return await interaction.response.send_message("<a:wt_torono:1480580892706603018> Invalid image URL. It must be a direct link to an image file.", ephemeral=True)
+            
+        with get_db_cursor() as cursor:
+            # We already know they have 1.2mil+ because the button only appears if they do
+            cursor.execute("UPDATE wallets SET profile_banner = ? WHERE user_id = ?", (url, interaction.user.id))
+            
+        await interaction.response.send_message("<a:wt_torohappyjump:1480580973400690932> Your custom banner has been set! Run `/networth` to view it.", ephemeral=True)
+
+class NetworthView(discord.ui.View):
+    def __init__(self, user_id: int):
+        super().__init__(timeout=None)
+        self.user_id = user_id
+
+    @discord.ui.button(label="Set Banner", style=discord.ButtonStyle.secondary, emoji="<a:wt_toropeek:1480580945084944484>")
+    async def banner_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            return await interaction.response.send_message("You can only set the banner on your own profile.", ephemeral=True)
+        await interaction.response.send_modal(BannerModal())
+
+
+
+
 class MarketplaceDropdown(discord.ui.Select):
     def __init__(self):
         options = [
@@ -334,6 +369,8 @@ class Marketplace(commands.Cog):
             try: cursor.execute("ALTER TABLE user_properties ADD COLUMN needs_repair INTEGER DEFAULT 0")
             except: pass
             try: cursor.execute("ALTER TABLE user_vehicles ADD COLUMN needs_repair INTEGER DEFAULT 0")
+            except: pass
+            try: cursor.execute("ALTER TABLE wallets ADD COLUMN profile_banner TEXT")
             except: pass
 
             vehicles = [
@@ -535,13 +572,65 @@ class Marketplace(commands.Cog):
         e.set_image(url="https://media.tenor.com/L7R86JpM-pUAAAAd/rolls-royce.gif")
         await i.response.send_message(embed=e)
 
-    @app_commands.command(name="networth", description="Calculate your total empire valuation")
+    def get_user_badges(self, cursor, user_id: int) -> str:
+        """Dynamically calculates and returns a string of ALL earned badge emojis."""
+        badges = []
+        
+        # 1. Liquid Badges (Changed to separate 'if' statements so they stack)
+        cursor.execute("SELECT balance FROM wallets WHERE user_id = ?", (user_id,))
+        row = cursor.fetchone()
+        bal = row[0] if row else 0
+        
+        if bal >= 2000000: 
+            badges.append("<:liquid_gold:1504512350550495312>") # Liquid Gold
+        if bal >= 4500000: 
+            badges.append("<:reserve_governor:1504512821042483250>") # Reserve Governor
+            
+        # 2. Diamond Hands
+        try:
+            cursor.execute("SELECT SUM(p.shares * s.price) FROM portfolio p JOIN stocks s ON p.symbol = s.symbol WHERE p.user_id = ?", (user_id,))
+            stock_v = (cursor.fetchone() or [0])[0] or 0
+            if stock_v >= 5000000: 
+                badges.append("<:diamond_hands:1504512947089834034>")
+        except: pass
+            
+        # 3. Real Estate
+        try:
+            cursor.execute("SELECT property_id FROM user_properties WHERE user_id = ?", (user_id,))
+            owned_props = [r[0] for r in cursor.fetchall()]
+            has_res = any(p.startswith("RES") for p in owned_props)
+            has_com = any(p.startswith("COM") for p in owned_props)
+            has_eli = any(p.startswith("ELI") for p in owned_props)
+            
+            if has_eli: 
+                badges.append("<:monopolist:1504515470932447394>") # Monopolist
+            if has_res and has_com and has_eli: 
+                badges.append("<:empire:1504512585096237227>") # Empire Builder
+        except: pass
+            
+        # 4. Careers
+        try:
+            cursor.execute("SELECT level FROM user_careers WHERE user_id = ?", (user_id,))
+            career = cursor.fetchone()
+            if career and career[0] >= 3: 
+                badges.append("<:corporate:1504515833148211270>") # Master of Industry
+        except: pass
+            
+        return " ".join(badges) if badges else ""
+
+    @app_commands.command(name="networth", description="Calculate your total empire valuation and view your badges")
     async def networth(self, i: discord.Interaction, user: Optional[discord.Member] = None):
         t = user or i.user
         with get_db_cursor() as c:
-            c.execute("SELECT balance FROM wallets WHERE user_id = ?", (t.id,))
-            bal_row = c.fetchone()
-            bal = bal_row[0] if bal_row else 0
+            # Fetch balance AND the custom banner
+            try:
+                c.execute("SELECT balance, profile_banner FROM wallets WHERE user_id = ?", (t.id,))
+                row = c.fetchone()
+                bal = row[0] if row else 0
+                banner_url = row[1] if row and len(row) > 1 else None
+            except:
+                bal = 0
+                banner_url = None
             
             c.execute("SELECT SUM(m.base_price) FROM user_properties u JOIN market_properties m ON u.property_id = m.id WHERE u.user_id = ?", (t.id,))
             prop_v = c.fetchone()[0] or 0
@@ -554,12 +643,40 @@ class Marketplace(commands.Cog):
                 stock_v = c.fetchone()[0] or 0
             except: stock_v = 0
             
+            # Fetch Badges!
+            badge_str = self.get_user_badges(c, t.id)
+            
         total = bal + prop_v + veh_v + stock_v
-        e = discord.Embed(title=f"꒰ა {t.name}'s Networth  ⸝⸝", color=0xffffff)
-        e.add_field(name="Liquid Capital", value=f"<:money_athena:1501918414867005511> A$ {bal:,}\n", inline=False)
-        e.add_field(name="Asset Valuation", value=f"<:house_athena:1501918600787922944> Real Estate: A$ {prop_v:,}\n<:car_athena:1501939281479073842> Vehicles: A$ {veh_v:,}\n<:stocks_athena:1501958537067364464> Stocks: A$ {stock_v:,}", inline=False)
-        e.description = f"**Total Valuation:**\n# A$ {total:,}"; e.set_thumbnail(url=t.display_avatar.url)
-        await i.response.send_message(embed=e)
+        
+        # --- PREMIUM EMBED UPGRADE ---
+        e = discord.Embed(title="꒰ა Athena Central Reserve  ⸝⸝", color=0xffffff) #2b2d31
+        e.set_author(name=f"{t.name}'s Financial Profile", icon_url=t.display_avatar.url)
+        
+        # Add Custom Banner if they set one!
+        if banner_url:
+            e.set_image(url=banner_url)
+        
+        desc = f"**Awards:**\n{badge_str if badge_str else '*No badges unlocked yet.*'}\n"
+        desc += "━━━━━━━━━━━━━━━━━━━━━━\n"
+        desc += f"**TOTAL VALUATION: A$ {total:,}**\n"
+        desc += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        e.description = desc
+        
+        e.add_field(name="<:money_athena:1501918414867005511> Liquid Capital", value=f"`A$ {bal:,}`", inline=True)
+        e.add_field(name="<:stocks_athena:1501958537067364464> Stock Portfolio", value=f"`A$ {stock_v:,}`", inline=True)
+        e.add_field(name="\u200b", value="\u200b", inline=True) 
+        
+        e.add_field(name="<:house_athena:1501918600787922944> Real Estate", value=f"`A$ {prop_v:,}`", inline=True)
+        e.add_field(name="<:car_athena:1501939281479073842> Luxury Garage", value=f"`A$ {veh_v:,}`", inline=True)
+        e.add_field(name="\u200b", value="\u200b", inline=True) 
+        
+        e.set_footer(text="")
+        
+        # Only attach the "Set Banner" view if the user is checking THEIR OWN profile AND they have 1.2M+
+        if t.id == i.user.id and bal >= 1200000:
+            await i.response.send_message(embed=e, view=NetworthView(i.user.id))
+        else:
+            await i.response.send_message(embed=e)
 
     @app_commands.command(name="leaderboard", description="View the Top 10 High Net Worth Individuals")
     async def leaderboard(self, i: discord.Interaction):
@@ -577,11 +694,21 @@ class Marketplace(commands.Cog):
                 for u, s, p in c.fetchall(): nw[u] = nw.get(u,0) + (s*p)
             except: pass
             
-        sorted_nw = sorted(nw.items(), key=lambda x: x[1], reverse=True)[:10]
+            sorted_nw = sorted(nw.items(), key=lambda x: x[1], reverse=True)[:10]
+            
+            # Fetch badges for the top 10
+            leaderboard_data = []
+            for uid, val in sorted_nw:
+                badge_str = self.get_user_badges(c, uid)
+                leaderboard_data.append((uid, val, badge_str))
+
         desc = ""
-        for rank, (uid, val) in enumerate(sorted_nw, 1):
+        for rank, (uid, val, badges) in enumerate(leaderboard_data, 1):
             user = self.bot.get_user(uid)
-            desc += f"`#{rank}` **{user.name if user else 'Unknown'}**\n<:money_athena:1501918414867005511> A$ {val:,}\n\n"
+            name_display = user.name if user else 'Unknown'
+            # Format: #1 Name 👑💎 | A$ 10,000,000
+            desc += f"`#{rank}` **{name_display}** {badges}\n<:money_athena:1501918414867005511> A$ {val:,}\n\n"
+            
         await i.followup.send(embed=discord.Embed(title="꒰ა Wealth Leaderboard  ⸝⸝", description=desc or "No data.", color=0xffffff))
 
 async def setup(bot): await bot.add_cog(Marketplace(bot))

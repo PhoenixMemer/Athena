@@ -182,6 +182,34 @@ class CareerView(discord.ui.View):
         with get_db_cursor() as cursor:
             cursor.execute("SELECT path, level, xp FROM user_careers WHERE user_id = ?", (interaction.user.id,))
             career = cursor.fetchone()
+            
+            # Get badges
+            badges = []
+            cursor.execute("SELECT balance FROM wallets WHERE user_id = ?", (interaction.user.id,))
+            bal = (cursor.fetchone() or [0])[0]
+            if bal >= 2000000: badges.append("💰") 
+            if bal >= 4500000: badges.append("🏦") 
+            if career and career[1] >= 3: badges.append("💼")
+            
+            # Get Portfolio Badges
+            try:
+                cursor.execute("SELECT SUM(p.shares * s.price) FROM portfolio p JOIN stocks s ON p.symbol = s.symbol WHERE p.user_id = ?", (interaction.user.id,))
+                stock_v = (cursor.fetchone() or [0])[0] or 0
+                if stock_v >= 5000000: badges.append("💎")
+            except: pass
+
+            # Get Property Badges
+            try:
+                cursor.execute("SELECT property_id FROM user_properties WHERE user_id = ?", (interaction.user.id,))
+                owned_props = [r[0] for r in cursor.fetchall()]
+                has_res = any(p.startswith("RES") for p in owned_props)
+                has_com = any(p.startswith("COM") for p in owned_props)
+                has_eli = any(p.startswith("ELI") for p in owned_props)
+                if has_eli: badges.append("👑")
+                if has_res and has_com and has_eli: badges.append("🏗️")
+            except: pass
+            
+            badge_str = " ".join(badges)
 
         if not career:
             return await interaction.response.send_message("<a:wt_toroconfused:1480580932367945918> You are unemployed. Select a path from the dropdown above.", ephemeral=True)
@@ -193,8 +221,11 @@ class CareerView(discord.ui.View):
         is_max = level >= len(path_data["levels"]) - 1
         next_req = 0 if is_max else path_data["levels"][level + 1]["xp_req"]
         
-        embed = discord.Embed(title="ა ﹒chérie  ⸝⸝", color=0xffffff)
-        desc = (
+        embed = discord.Embed(title="꒰ა ﹒chérie  ⸝⸝", color=0xffffff)
+        
+        # Add badges to the top of the profile
+        desc = f"{badge_str}\n\n" if badge_str else ""
+        desc += (
             f"** <:s_white2:1382052523166142486> Industry:** {path_data['name']} {path_data['emoji']}\n"
             f"** <:s_white2:1382052523166142486> Current Role:** {current_level_data['title']}\n"
             f"** <:s_white2:1382052523166142486> Base Salary:** A$ {current_level_data['base_pay']:,}\n\n"
@@ -204,6 +235,21 @@ class CareerView(discord.ui.View):
         embed.description = desc
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
         await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @discord.ui.button(label="Badge Index", style=discord.ButtonStyle.secondary, emoji="<a:wt_toroking:1480580998742937691>", row=1)
+    async def index_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        embed = discord.Embed(title="Central Reserve Badge Index", color=0xffffff)
+        embed.description = "Elite honors awarded automatically based on your financial achievements. View your earned badges via `/networth` or your career profile."
+        
+        embed.add_field(name="<:liquid_gold:1504512350550495312> Liquid Gold", value="Maintain a liquid balance of **A$ 2,000,000**.", inline=False)
+        embed.add_field(name="<:reserve_governor:1504512821042483250> Reserve Governor", value="Maintain a liquid balance of **A$ 4,500,000**.", inline=False)
+        embed.add_field(name="<:diamond_hands:1504512947089834034> Diamond Hands", value="Hold over **A$ 5,000,000** in active stock investments.", inline=False)
+        embed.add_field(name="<:monopolist:1504515470932447394> The Monopolist", value="Purchase any **Elite Tier** property.", inline=False)
+        embed.add_field(name="<:empire:1504512585096237227> Empire Builder", value="Own at least one Residential, Commercial, and Elite property simultaneously.", inline=False)
+        embed.add_field(name="<:corporate:1504515833148211270> Master of Industry", value="Reach the absolute **MAX level** in your chosen career path.", inline=False)
+        
+        embed.set_footer(text="More badges will be introduced very soon.")
+        await interaction.response.send_message(embed=embed, ephemeral=False)
 
 # ==========================================
 # 🏙️ THE CAREERS COG
