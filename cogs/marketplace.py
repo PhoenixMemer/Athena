@@ -683,17 +683,25 @@ class Marketplace(commands.Cog):
         await i.response.defer()
         with get_db_cursor() as c:
             nw = {}
+            # 1. Liquid Capital
             c.execute("SELECT user_id, balance FROM wallets")
             for u, b in c.fetchall(): nw[u] = b
+            
+            # 2. Real Estate Valuation
             c.execute("SELECT u.user_id, m.base_price FROM user_properties u JOIN market_properties m ON u.property_id = m.id")
             for u, p in c.fetchall(): nw[u] = nw.get(u,0) + p
+            
+            # 3. Vehicle Valuation
             c.execute("SELECT u.user_id, m.price FROM user_vehicles u JOIN market_vehicles m ON u.vehicle_id = m.id")
             for u, p in c.fetchall(): nw[u] = nw.get(u,0) + p
+            
+            # 4. Stock Portfolio Valuation
             try:
                 c.execute("SELECT p.user_id, p.shares, s.price FROM portfolio p JOIN stocks s ON p.symbol = s.symbol")
                 for u, s, p in c.fetchall(): nw[u] = nw.get(u,0) + (s*p)
             except: pass
             
+            # Sort and take top 10
             sorted_nw = sorted(nw.items(), key=lambda x: x[1], reverse=True)[:10]
             
             # Fetch badges for the top 10
@@ -702,13 +710,37 @@ class Marketplace(commands.Cog):
                 badge_str = self.get_user_badges(c, uid)
                 leaderboard_data.append((uid, val, badge_str))
 
+        # --- PREMIUM EMBED UPGRADE ---
+        e = discord.Embed(title="꒰ა Athena Wealth Leaderboard  ⸝⸝", color=0xffffff)
+        e.description = "*The Top 10 High Net Worth Individuals (HNWI) ranked by total global asset valuation.*\n\n"
+        
         desc = ""
         for rank, (uid, val, badges) in enumerate(leaderboard_data, 1):
             user = self.bot.get_user(uid)
-            name_display = user.name if user else 'Unknown'
-            # Format: #1 Name 👑💎 | A$ 10,000,000
-            desc += f"`#{rank}` **{name_display}** {badges}\n<:money_athena:1501918414867005511> A$ {val:,}\n\n"
+            name_display = user.name.upper() if user else 'UNKNOWN'
             
-        await i.followup.send(embed=discord.Embed(title="꒰ა Wealth Leaderboard  ⸝⸝", description=desc or "No data.", color=0xffffff))
+            # Formatting the top 3 with special medals
+            if rank == 1:
+                medal = "<:firstplace:1504526139199197444>"
+            elif rank == 2:
+                medal = "<:secondplace:1504526178688569394>"
+            elif rank == 3:
+                medal = "<:thirdplace:1504526220103127070>"
+            else:
+                medal = f"`#{rank}`"
+
+            # Format: 🥇 USERNAME 👑💎
+            #         A$ 10,000,000
+            desc += f"{medal} {name_display} {badges}\n"
+            desc += f"└ <:athenacoin:1503804322280902767> **A$ {val:,}**\n\n"
+            
+        e.description += desc if desc else "*No financial data available.*"
+        e.set_footer(text="Athena Central Reserve")
+        
+        # Add server icon as thumbnail if it exists
+        if i.guild and i.guild.icon:
+            e.set_thumbnail(url=i.guild.icon.url)
+            
+        await i.followup.send(embed=e)
 
 async def setup(bot): await bot.add_cog(Marketplace(bot))

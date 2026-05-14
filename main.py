@@ -39,7 +39,7 @@ initial_extensions = [
     'cogs.mod_training',
     'cogs.economy',
     'cogs.casino',
-    'cogs.business2',
+    'cogs.business3',
     'cogs.invest',
     'cogs.careers',
     'cogs.cupid_dashboard',
