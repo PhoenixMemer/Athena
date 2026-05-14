@@ -35,11 +35,15 @@ def get_db_cursor():
 
 # ✅ FIX: NO TRAILING SPACES IN KEYS!
 CARD_TIERS = {
-    "silver": {"multiplier": 1.0, "name": "Standard Silver"},
-    "gold": {"multiplier": 1.9, "name": "Gold Elite"},
-    "crystal": {"multiplier": 2.5, "name": "Crystal Debit"},
-    "plat_black": {"multiplier": 4.5, "name": "Platinum Black"},
-    "plat_pink": {"multiplier": 4.5, "name": "Platinum Chérie"}
+    "silver": {"threshold": 0, "file": "card_silver.png", "color": (255, 255, 255), "name": "Standard Silver", "multiplier": 1.0},
+    "gold": {"threshold": 100000, "file": "card_gold.png", "color": (255, 255, 255), "name": "Gold Elite", "multiplier": 1.9},
+    "crystal": {"threshold": 300000, "file": "card_crystal.png", "color": (255, 255, 255), "name": "Crystal Debit", "multiplier": 2.5},
+    "plat_black": {"threshold": 600000, "file": "card_plat_black.png", "color": (214, 214, 214), "name": "Platinum Black", "multiplier": 4.5},
+    "plat_pink": {"threshold": 600000, "file": "card_plat_pink.png", "color": (219, 120, 200), "name": "Platinum Chérie", "multiplier": 4.5},
+    
+    "infinite": {"threshold": 1200000, "file": "card_infinite.png", "color": (214, 214, 214), "name": "VISA Infinite", "multiplier": 6.5},
+    "signature": {"threshold": 3000000, "file": "card_signature.png", "color": (214, 214, 214), "name": "VISA Signature", "multiplier": 8.0},
+    "world_debit": {"threshold": 4500000, "file": "card_worlddebit.png", "color": (214, 214, 214), "name": "VISA World Debit", "multiplier": 10.0}
 }
 
 # ✅ FIX: Cleaned up dictionary structure
@@ -68,7 +72,7 @@ CAREER_PATHS = {
             "assisting in the ER during a rush hour",
             "administering vaccinations to flat earthers",
             "performing an unsuccessful surgery on Nami",
-            "diagnosing a complex case of chronic silliness in Ari",
+            "diagnosing a complex case of chronic silliness in Kyxrt",
             "refilling prescriptions for the entire staff"
         ],
         "levels": [
@@ -305,7 +309,7 @@ class Careers(commands.Cog):
         if path_key == "tech":
             flavor_msg = "<:btb_white3:1375474689467748517> **Shift Report:** You spent your shift debugging code for Athena."
         elif path_key == "medicine":
-            flavor_msg = "<:btb_white3:1375474689467748517> **Shift Report:** You spent your shift in the psych ward treating Ari."
+            flavor_msg = "<:btb_white3:1375474689467748517> **Shift Report:** You spent your shift in the bunker treating burn unit patients."
         elif path_key == "finance":
             flavor_msg = "<:btb_white3:1375474689467748517> **Shift Report:** You spent your shift on the trading floor hiding tax gains."
         else:
