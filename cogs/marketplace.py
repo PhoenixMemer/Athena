@@ -8,6 +8,7 @@ from typing import List, Optional
 from contextlib import contextmanager
 
 DB_PATH = "economy.db"
+DEFAULT_NETWORTH_BANNER = "https://i.pinimg.com/originals/e8/f6/1b/e8f61b64959302d3b04a4db7dbb53f3a.gif"
 
 # ==========================================
 # 🗄️ SAFE DATABASE CONTEXT MANAGER
@@ -380,7 +381,7 @@ class Marketplace(commands.Cog):
                 ('CAR4', 'Aston Martin DB12', 185000, 40),
                 ('CAR5', 'Chevrolet Corvette ZR1', 195000, 45),
                 ('CAR6', 'Rolls-Royce Cullinan', 250000, 50),
-                ('CAR7', 'Ferrari SF90 Stradale', 350000, 60)
+                ('CAR7', 'Ferrari SF90 Stradale', 320000, 60)
             ]
             cursor.executemany("INSERT OR REPLACE INTO market_vehicles VALUES (?, ?, ?, ?)", vehicles)
             
@@ -652,9 +653,8 @@ class Marketplace(commands.Cog):
         e = discord.Embed(title="꒰ა Athena Central Reserve  ⸝⸝", color=0xffffff) #2b2d31
         e.set_author(name=f"{t.name}'s Financial Profile", icon_url=t.display_avatar.url)
         
-        # Add Custom Banner if they set one!
-        if banner_url:
-            e.set_image(url=banner_url)
+        # Uses the custom banner if set, otherwise falls back to the default
+        e.set_image(url=banner_url or DEFAULT_NETWORTH_BANNER)
         
         desc = f"**Awards:**\n{badge_str if badge_str else '*No badges unlocked yet.*'}\n"
         desc += "━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -662,7 +662,7 @@ class Marketplace(commands.Cog):
         desc += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
         e.description = desc
         
-        e.add_field(name="<:money_athena:1501918414867005511> Liquid Capital", value=f"`A$ {bal:,}`", inline=True)
+        e.add_field(name="<:athenacoin:1503804322280902767> Liquid Capital", value=f"`A$ {bal:,}`", inline=True)
         e.add_field(name="<:stocks_athena:1501958537067364464> Stock Portfolio", value=f"`A$ {stock_v:,}`", inline=True)
         e.add_field(name="\u200b", value="\u200b", inline=True) 
         

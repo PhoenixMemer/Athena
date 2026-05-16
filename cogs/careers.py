@@ -38,12 +38,13 @@ CARD_TIERS = {
     "silver": {"threshold": 0, "file": "card_silver.png", "color": (255, 255, 255), "name": "Standard Silver", "multiplier": 1.0},
     "gold": {"threshold": 100000, "file": "card_gold.png", "color": (255, 255, 255), "name": "Gold Elite", "multiplier": 1.9},
     "crystal": {"threshold": 300000, "file": "card_crystal.png", "color": (255, 255, 255), "name": "Crystal Debit", "multiplier": 2.5},
-    "plat_black": {"threshold": 600000, "file": "card_plat_black.png", "color": (214, 214, 214), "name": "Platinum Black", "multiplier": 4.5},
-    "plat_pink": {"threshold": 600000, "file": "card_plat_pink.png", "color": (219, 120, 200), "name": "Platinum Chérie", "multiplier": 4.5},
+    "plat_black": {"threshold": 600000, "file": "card_plat_black.png", "color": (214, 214, 214), "name": "Platinum Black", "multiplier": 3.5},
+    "plat_pink": {"threshold": 600000, "file": "card_plat_pink.png", "color": (219, 120, 200), "name": "Platinum Chérie", "multiplier": 3.5},
     
-    "infinite": {"threshold": 1200000, "file": "card_infinite.png", "color": (214, 214, 214), "name": "VISA Infinite", "multiplier": 6.5},
-    "signature": {"threshold": 3000000, "file": "card_signature.png", "color": (214, 214, 214), "name": "VISA Signature", "multiplier": 8.0},
-    "world_debit": {"threshold": 4500000, "file": "card_worlddebit.png", "color": (214, 214, 214), "name": "VISA World Debit", "multiplier": 10.0}
+    "signature": {"threshold": 1200000, "file": "card_signature.png", "color": (214, 214, 214), "name": "VISA Signature", "multiplier": 4.9},
+    "infinite": {"threshold": 3000000, "file": "card_infinite.png", "color": (214, 214, 214), "name": "VISA Infinite", "multiplier": 5.3},
+    "world_debit": {"threshold": 4500000, "file": "card_worlddebit.png", "color": (214, 214, 214), "name": "VISA World Debit", "multiplier": 5.7},
+    "signature_pink": {"threshold": 1200000, "file": "card_sigpink.png", "color": (255, 255, 255), "name": "VISA Chérie Signature", "multiplier": 4.9}
 }
 
 # ✅ FIX: Cleaned up dictionary structure
@@ -187,15 +188,15 @@ class CareerView(discord.ui.View):
             badges = []
             cursor.execute("SELECT balance FROM wallets WHERE user_id = ?", (interaction.user.id,))
             bal = (cursor.fetchone() or [0])[0]
-            if bal >= 2000000: badges.append("💰") 
-            if bal >= 4500000: badges.append("🏦") 
-            if career and career[1] >= 3: badges.append("💼")
+            if bal >= 2000000: badges.append("<:liquid_gold:1504512350550495312>") 
+            if bal >= 4500000: badges.append("<:reserve_governor:1504512821042483250>") 
+            if career and career[1] >= 3: badges.append("<:corporate:1504515833148211270>")
             
             # Get Portfolio Badges
             try:
                 cursor.execute("SELECT SUM(p.shares * s.price) FROM portfolio p JOIN stocks s ON p.symbol = s.symbol WHERE p.user_id = ?", (interaction.user.id,))
                 stock_v = (cursor.fetchone() or [0])[0] or 0
-                if stock_v >= 5000000: badges.append("💎")
+                if stock_v >= 5000000: badges.append("<:diamond_hands:1504512947089834034>")
             except: pass
 
             # Get Property Badges
@@ -205,8 +206,8 @@ class CareerView(discord.ui.View):
                 has_res = any(p.startswith("RES") for p in owned_props)
                 has_com = any(p.startswith("COM") for p in owned_props)
                 has_eli = any(p.startswith("ELI") for p in owned_props)
-                if has_eli: badges.append("👑")
-                if has_res and has_com and has_eli: badges.append("🏗️")
+                if has_eli: badges.append("<:monopolist:1504515470932447394>")
+                if has_res and has_com and has_eli: badges.append("<:empire:1504512585096237227>")
             except: pass
             
             badge_str = " ".join(badges)
@@ -294,11 +295,34 @@ class Careers(commands.Cog):
 
             path_key, level, xp, last_worked = career
             
-            # --- DYNAMIC COOLDOWN ---
-            base_cooldown = 3600 # 1 hour
-            cursor.execute("SELECT MAX(m.cooldown_reduction) FROM user_vehicles u JOIN market_vehicles m ON u.vehicle_id = m.id WHERE u.user_id = ? AND u.needs_repair = 0", (interaction.user.id,))
-            max_reduction = cursor.fetchone()[0] or 0
-            actual_cooldown = max(0, base_cooldown - (max_reduction * 60))
+            # --- FETCH CAR DATA ONCE ---
+            # We fetch both the reduction AND the car name right away while the DB is open!
+            cursor.execute("""
+                SELECT MAX(m.cooldown_reduction), m.name 
+                FROM user_vehicles u 
+                JOIN market_vehicles m ON u.vehicle_id = m.id 
+                WHERE u.user_id = ? AND u.needs_repair = 0
+                ORDER BY m.price DESC LIMIT 1
+            """, (interaction.user.id,))
+            car_data = cursor.fetchone()
+            
+            # If they have a car, unpack the data. If not, default to 0 and "your feet"
+            if car_data and car_data[0] is not None:
+                max_reduction_minutes = car_data[0]
+                car_name = car_data[1]
+            else:
+                max_reduction_minutes = 0
+                car_name = "your feet"
+            
+            # --- DYNAMIC COOLDOWN (Balanced) ---
+            base_cooldown = 2700  # 45 minutes (Standard for broke users)
+            absolute_minimum = 900  # 15 minutes (The "Hard Floor" for rich users)
+            
+            # Calculate new cooldown: Base minus the car's reduction in seconds
+            calculated_cooldown = base_cooldown - (max_reduction_minutes * 60)
+            
+            # Enforce the Hard Floor (Cannot go below 15 mins)
+            actual_cooldown = max(absolute_minimum, calculated_cooldown)
             
             now = time.time()
             if now - last_worked < actual_cooldown:
@@ -310,7 +334,6 @@ class Careers(commands.Cog):
                 )
 
             # --- CALCULATE PAYOUT & CARDS ---
-            # ✅ FIX: Strip whitespace from card name to prevent lookup failures
             cursor.execute("SELECT active_card FROM wallets WHERE user_id = ?", (interaction.user.id,))
             card_row = cursor.fetchone()
             active_card = (card_row[0] if card_row else 'silver').strip()
@@ -319,11 +342,14 @@ class Careers(commands.Cog):
             current_level_data = path_data["levels"][level]
             
             base_pay = current_level_data["base_pay"]
-            # ✅ FIX: Use clean CARD_TIERS dictionary
             mult = CARD_TIERS.get(active_card, CARD_TIERS["silver"])["multiplier"]
             
             payout = int((base_pay * random.uniform(0.9, 1.2)) * mult)
-            gained_xp = random.randint(15, 30)
+            
+            # --- XP INCENTIVE ---
+            gained_xp_base = random.randint(15, 30)
+            xp_mult = 1 + (max_reduction_minutes / 100) # e.g. 60 min reduction = 1.6x XP
+            gained_xp = int(gained_xp_base * xp_mult)
             new_xp = xp + gained_xp
             
             # --- CHECK PROMOTION ---
@@ -343,15 +369,12 @@ class Careers(commands.Cog):
             
             # --- ATOMIC BALANCE UPDATE ---
             success = atomic_balance_update(cursor, interaction.user.id, payout)
-            
             if not success:
-                # Fallback if collision occurred (retry once)
                 success = atomic_balance_update(cursor, interaction.user.id, payout)
         
-        # --- VARYING MESSAGES PER CAREER ---
+        # --- (DB IS NOW CLOSED) SENDING EMBED ---
         task_done = random.choice(path_data["tasks"])
         
-        # Flavor text based on career type
         if path_key == "tech":
             flavor_msg = "<:btb_white3:1375474689467748517> **Shift Report:** You spent your shift debugging code for Athena."
         elif path_key == "medicine":
@@ -363,10 +386,11 @@ class Careers(commands.Cog):
 
         embed = discord.Embed(title="꒰ა ﹒chérie  ⸝", color=0xffffff)
         desc = (
+            f"<a:wt_torocellphone:1503815758730366976> **Commute:** You pulled up to work in **{car_name}**.\n"
             f"{flavor_msg}\n"
             f"<:s_white2:1382052523166142486> **Task:** {task_done}\n"
-            f"<:s_white2:1382052523166142486> **Earned:** A$ {payout:,} <:athenacoin:1503804322280902767> *(Includes {mult}x {CARD_TIERS[active_card]['name']} Bonus)*\n"
-            f"<:s_white2:1382052523166142486> **XP Gained:** +{gained_xp} XP\n\n"
+            f"<:s_white2:1382052523166142486> **Earned:** A$ {payout:,} <:athenacoin:1503804322280902767>\n"
+            f"<:s_white2:1382052523166142486> **XP Gained:** +{gained_xp} XP (Car Bonus included!)\n\n"
         )
         
         if promoted:

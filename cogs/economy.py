@@ -39,21 +39,23 @@ CARD_TIERS = {
     "silver": {"threshold": 0, "file": "card_silver.png", "color": (255, 255, 255), "name": "Standard Silver", "multiplier": 1.0},
     "gold": {"threshold": 100000, "file": "card_gold.png", "color": (255, 255, 255), "name": "Gold Elite", "multiplier": 1.9},
     "crystal": {"threshold": 300000, "file": "card_crystal.png", "color": (255, 255, 255), "name": "Crystal Debit", "multiplier": 2.5},
-    "plat_black": {"threshold": 600000, "file": "card_plat_black.png", "color": (214, 214, 214), "name": "Platinum Black", "multiplier": 4.5},
-    "plat_pink": {"threshold": 600000, "file": "card_plat_pink.png", "color": (219, 120, 200), "name": "Platinum Chérie", "multiplier": 4.5},
+    "plat_black": {"threshold": 600000, "file": "card_plat_black.png", "color": (214, 214, 214), "name": "Platinum Black", "multiplier": 3.5},
+    "plat_pink": {"threshold": 600000, "file": "card_plat_pink.png", "color": (219, 120, 200), "name": "Platinum Chérie", "multiplier": 3.5},
     
-    "infinite": {"threshold": 1200000, "file": "card_infinite.png", "color": (214, 214, 214), "name": "VISA Infinite", "multiplier": 6.5},
-    "signature": {"threshold": 3000000, "file": "card_signature.png", "color": (214, 214, 214), "name": "VISA Signature", "multiplier": 8.0},
-    "world_debit": {"threshold": 4500000, "file": "card_worlddebit.png", "color": (214, 214, 214), "name": "VISA World Debit", "multiplier": 10.0}
+    "signature": {"threshold": 1200000, "file": "card_signature.png", "color": (214, 214, 214), "name": "VISA Signature", "multiplier": 4.9},
+    "infinite": {"threshold": 3000000, "file": "card_infinite.png", "color": (214, 214, 214), "name": "VISA Infinite", "multiplier": 5.3},
+    "world_debit": {"threshold": 4500000, "file": "card_worlddebit.png", "color": (214, 214, 214), "name": "VISA World Debit", "multiplier": 5.7},
+    "signature_pink": {"threshold": 1200000, "file": "card_sigpink.png", "color": (255, 255, 255), "name": "VISA Chérie Signature", "multiplier": 5.3}
 }
 
 TIER_THRESHOLDS = [
     (100000, "gold", "Gold Elite"),
     (300000, "crystal", "Crystal Debit"),
     (600000, "plat_black", "Platinum Black"),
-    (1200000, "infinite", "Infinite"),
-    (3000000, "signature", "Signature"),
-    (4500000, "world_debit", "World Debit")
+    (1200000, "signature", "Signature"),
+    (1200000, "signature_pink", "Signature Chérie"),
+    (3000000, "infinite", "Infinite"),
+    (4500000, "world_debit", "World Debit"),
 ]
 
 # ==========================================
@@ -402,6 +404,7 @@ class Economy(commands.Cog):
         app_commands.Choice(name="Platinum Black (600k+ A$)", value="plat_black"),
         app_commands.Choice(name="Platinum Chérie (600k+ A$)", value="plat_pink"),
         app_commands.Choice(name="Signature (1.2m+ A$)", value="signature"),
+        app_commands.Choice(name="Signature Chérie (1.2m+ A$)", value="signature_pink"),
         app_commands.Choice(name="Infinite (3.0m+ A$)", value="infinite"),
         app_commands.Choice(name="World Debit (4.5m+ A$)", value="world_debit")
     ])
