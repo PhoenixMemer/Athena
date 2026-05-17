@@ -41,7 +41,7 @@ TECH_MILESTONES = {
 }
 
 NAMES = ["Liam", "Emma", "Noah", "Olivia", "Trump", "Nova", "Elysia", "Sophia", "Mateo", "Isabella",
-         "Lucas", "Labubu", "Arthur", "Yeo", "Phoenix", "Declan", "Ezra", "Aiden", "Sarah", "Kyxrt"]
+         "Lucas", "Labubu", "Arthur", "Yeo", "Phoenix", "Declan", "Ezra", "Chase", "Sarah", "Kyxrt"]
 
 DEFAULT_BANNER = "https://i.pinimg.com/736x/32/8f/6c/328f6c628b745f20776421e73decf15e.jpg"
 
@@ -129,6 +129,65 @@ def log_business_event(cursor, user_id: int, event_type: str, description: str):
 # ==========================================
 # 📊 UI COMPONENTS & MODALS
 # ==========================================
+
+class DiluteSharesModal(discord.ui.Modal, title='Issue Corporate Shares'):
+    shares = discord.ui.TextInput(label='Number of Shares to Mint & Sell', placeholder='e.g., 500')
+
+    async def on_submit(self, i: discord.Interaction):
+        try:
+            shares_to_mint = int(self.shares.value)
+            if shares_to_mint <= 0: raise ValueError
+            
+            with get_db_cursor() as c:
+                c.execute("SELECT name, is_public, capital, reputation FROM businesses WHERE user_id = ?", (i.user.id,))
+                biz = c.fetchone()
+                if not biz or biz[1] == 0:
+                    return await i.response.send_message("❌ Your company must be public (IPO) to dilute equity.", ephemeral=True)
+                
+                sym = biz[0][:4].upper()
+                
+                # Connect to economy database to look up their true real-time trading price
+                with get_eco_cursor() as c_eco:
+                    c_eco.execute("SELECT price FROM stocks WHERE symbol = ?", (sym,))
+                    stock_row = c_eco.fetchone()
+                
+                if not stock_row:
+                    return await i.response.send_message("❌ Stock ticker profile data not found.", ephemeral=True)
+                    
+                current_stock_price = stock_row[0]
+                
+                # --- EQUITY CALCULATION ---
+                # Total capital raised scales directly with how valuable their stock is!
+                capital_raised = shares_to_mint * current_stock_price
+                
+                # Penalty: Every 100 shares minted drops reputation by 1% and drops share value by 1%
+                rep_drop = max(1, shares_to_mint // 100)
+                price_drop_pct = min(0.85, (shares_to_mint / 100) * 0.01)
+                
+                if rep_drop >= biz[3] or price_drop_pct >= 0.85:
+                    return await i.response.send_message("❌ **The Athena Central Reserve blocked this issuance.** Minting this many shares would trigger a hyper-inflationary collapse of your brand equity.", ephemeral=True)
+
+                # Apply Capital Increase & Reputation Drop to Business Database
+                c.execute("UPDATE businesses SET capital = capital + ?, reputation = MAX(1, reputation - ?) WHERE user_id = ?", (capital_raised, rep_drop, i.user.id))
+                log_business_event(c, i.user.id, "SHARE_DILUTION", f"Minted {shares_to_mint} shares to raise A$ {capital_raised:,}")
+                
+                # Apply Price Crash to Stock Market Database
+                with get_eco_cursor() as c_eco:
+                    new_stock_price = max(10, int(current_stock_price * (1.0 - price_drop_pct)))
+                    c_eco.execute("UPDATE stocks SET price = ?, trend = '📉 DILUTED' WHERE symbol = ?", (new_stock_price, sym))
+                    
+            await i.response.send_message(
+                f"**Equity Issuance Executed Successfully!**\n"
+                f"You minted and sold **{shares_to_mint:,} shares** on the open market, raising **A$ {capital_raised:,}** in liquid corporate capital.\n\n"
+                f"**Market Readjustments Applied:**\n"
+                f"• Brand Reputation dropped by **-{rep_drop}%** due to dilution irritation.\n"
+                f"• Stock Price shifted from A$ {current_stock_price:,} down to **A$ {new_stock_price:,}**.",
+                ephemeral=False
+            )
+
+        except ValueError:
+            await i.response.send_message("❌ Invalid entry. Please specify a clean integer amount of shares.", ephemeral=True)
+
 class DescriptionModal(discord.ui.Modal, title='Set Company Bio'):
     desc = discord.ui.TextInput(label='Company Description', style=discord.TextStyle.paragraph, max_length=150, placeholder='A rising corporate empire...')
     async def on_submit(self, i: discord.Interaction):
@@ -204,31 +263,29 @@ class ProductModal(discord.ui.Modal):
         await i.response.send_message(f"<a:wt_toroexclaim:1480581004317036624> **{full_name}** launched successfully in the {self.sector} sector!", ephemeral=True)
 
 
-class EditPriceModal(discord.ui.Modal):
+class EditProductModal(discord.ui.Modal):
     new_price = discord.ui.TextInput(label='New Unit Selling Price (A$)', placeholder='Enter new price...', max_length=7)
+    new_qty = discord.ui.TextInput(label='New Daily Target Quantity', placeholder='Enter new production target...', max_length=7)
 
+    # Make sure 'self' is explicitly right here as the first parameter!
     def __init__(self, product_id: int, product_name: str, base_cost: int):
-        # We must ensure the total title length is <= 45 characters.
-        # "Edit Price: " is 12 characters. That leaves 33 characters for the name.
-        # If the name is longer than 30 chars, we truncate it and add "..."
         short_name = product_name[:30] + "..." if len(product_name) > 30 else product_name
-        
-        super().__init__(title=f"Edit Price: {short_name}")
+        super().__init__(title=f"Edit: {short_name}")
         self.product_id = product_id
         self.base_cost = base_cost
 
     async def on_submit(self, i: discord.Interaction):
         try:
             price = int(self.new_price.value)
-            if price <= self.base_cost: raise ValueError
+            qty = int(self.new_qty.value)
+            if price <= self.base_cost or qty < 0: raise ValueError
         except ValueError:
-            return await i.response.send_message(f"<a:wt_torono:1480580892706603018> Invalid price! It must be higher than the base production cost (A$ {self.base_cost}).", ephemeral=True)
+            return await i.response.send_message(f"<a:wt_torono:1480580892706603018> Invalid numbers! Price must be strictly higher than the Base Cost (A$ {self.base_cost}) and quantity cannot be negative.", ephemeral=True)
 
         with get_db_cursor() as c:
-            c.execute("UPDATE business_products SET unit_price = ? WHERE id = ?", (price, self.product_id))
+            c.execute("UPDATE business_products SET unit_price = ?, production_target = ? WHERE id = ?", (price, qty, self.product_id))
         
-        await i.response.send_message(f"<a:wt_toroexclaim:1480581004317036624> Price updated to **A$ {price:,}**.", ephemeral=True)
-
+        await i.response.send_message(f"<a:wt_toroexclaim:1480581004317036624> **Product Configuration Updated!** New Price: A$ {price:,} | Daily Target: {qty:,} units.", ephemeral=False)
 
 
 class ProductTypeDropdown(discord.ui.Select):
@@ -243,17 +300,17 @@ class ProductTypeDropdown(discord.ui.Select):
         # NOW we pop open the Modal to get their custom name and numbers!
         await i.response.send_modal(ProductModal(self.sector, product_type))
 
-class EditPriceDropdown(discord.ui.Select):
+class EditProductDropdown(discord.ui.Select):
     def __init__(self, user_id: int, sector: str):
         self.base_cost = SECTOR_BASE_COSTS.get(sector, 100)
         with get_db_cursor() as c:
-            c.execute("SELECT id, name, unit_price FROM business_products WHERE user_id = ? AND active = 1", (user_id,))
+            c.execute("SELECT id, name, unit_price, production_target FROM business_products WHERE user_id = ? AND active = 1", (user_id,))
             prods = c.fetchall()
         
-        opts = [discord.SelectOption(label=f"{n} (A$ {p:,})", value=str(id)) for id, n, p in prods]
+        opts = [discord.SelectOption(label=f"{n}", description=f"Price: A$ {p:,} | Target: {q:,}/day", value=str(id)) for id, n, p, q in prods]
         if not opts: opts.append(discord.SelectOption(label="No products found", value="none"))
         
-        super().__init__(placeholder="Select a product to re-price...", options=opts)
+        super().__init__(placeholder="Select a product to configure...", options=opts)
 
     async def callback(self, i: discord.Interaction):
         if self.values[0] == "none": return
@@ -261,7 +318,9 @@ class EditPriceDropdown(discord.ui.Select):
         product_id = int(self.values[0])
         product_name = [o.label for o in self.options if o.value == self.values[0]][0]
         
-        await i.response.send_modal(EditPriceModal(product_id, product_name, self.base_cost))
+        # This passes exactly 3 positional arguments alongside the implicit class instance
+        await i.response.send_modal(EditProductModal(product_id, product_name, self.base_cost))
+
 class UpgradeProductDropdown(discord.ui.Select):
     def __init__(self, user_id):
         self.user_id = user_id
@@ -477,6 +536,28 @@ class EarningsCallView(discord.ui.View):
         await i.response.edit_message(content="<a:wt_toroexclaim:1480581004317036624> Investors trust your vision. Reputation has skyrocketed!", view=self)
 
 
+class PayoutModal(discord.ui.Modal, title='CEO Capital Withdrawal'):
+    amount = discord.ui.TextInput(label='Amount to Withdraw (A$)', placeholder='e.g., 50000')
+    async def on_submit(self, i: discord.Interaction):
+        try:
+            amt = int(self.amount.value)
+            if amt <= 0: raise ValueError
+            with get_db_cursor() as c:
+                c.execute("SELECT capital FROM businesses WHERE user_id = ?", (i.user.id,))
+                biz = c.fetchone()
+                if not biz or biz[0] < amt:
+                    return await i.response.send_message("<a:wt_torono:1480580892706603018> Insufficient corporate capital.", ephemeral=True)
+                # Deduct from business
+                c.execute("UPDATE businesses SET capital = capital - ? WHERE user_id = ?", (amt, i.user.id))
+            
+            # Add to personal wallet
+            with get_eco_cursor() as c_eco:
+                atomic_eco_balance_update(c_eco, i.user.id, amt)
+                
+            await i.response.send_message(f"<a:wt_toroexclaim:1480581004317036624> Successfully wired A$ {amt:,} to your personal account.", ephemeral=False)
+        except ValueError:
+            await i.response.send_message("<a:wt_torono:1480580892706603018> Invalid amount.", ephemeral=True)
+
 # ----- sub-views -----
 class BusinessGuideView(discord.ui.View):
     def __init__(self, embeds):
@@ -502,22 +583,64 @@ class BusinessGuideView(discord.ui.View):
         await i.response.edit_message(embed=self.embeds[self.current_page], view=self)
 
 class ProductPerformanceView(discord.ui.View):
-    def __init__(self, user_id): super().__init__(timeout=180); self.user_id = user_id
+    def __init__(self, user_id): 
+        super().__init__(timeout=180)
+        self.user_id = user_id
+        
     @discord.ui.button(label="Refresh", style=discord.ButtonStyle.secondary)
-    async def refresh(self, i: discord.Interaction, btn): await i.response.edit_message(embed=self.get_embed(), view=self)
+    async def refresh(self, i: discord.Interaction, btn): 
+        await i.response.edit_message(embed=self.get_embed(), view=self)
+        
     def get_embed(self):
         with get_db_cursor() as c:
-            c.execute("SELECT name, unit_price, cost_to_make, lifetime_revenue, quality_tier FROM business_products WHERE user_id = ?", (self.user_id,))
+            # FIX 1: Fetch BOTH Tech Level and Sector from the businesses table
+            c.execute("SELECT tech_level, sector FROM businesses WHERE user_id = ?", (self.user_id,))
+            biz_row = c.fetchone()
+            
+            tech = biz_row[0] if biz_row else 0
+            sector = biz_row[1] if biz_row else "Tech" # Defaults to Tech if blank
+            cost_red = 0.1 if tech >= 20 else 0.0
+            
+            c.execute("SELECT name, unit_price, cost_to_make, lifetime_revenue, quality_tier, production_target, lifetime_sold FROM business_products WHERE user_id = ?", (self.user_id,))
             prods = c.fetchall()
-        embed = discord.Embed(title="꒰ა ﹒chérie  ⸝⸝", color=0xffffff)
-        if not prods: embed.description = "No products."; return embed
-        max_rev = max(p[3] for p in prods)
+        
+        embed = discord.Embed(title="꒰ა Product Analytics  ⸝⸝", color=0xffffff)
+        if not prods: 
+            embed.description = "No products launched."
+            return embed
+        
         desc = ""
-        for name, price, cost, rev, tier in prods:
-            margin = price - cost
-            chart = "█" * int((rev / max_rev) * 12) + "░" * (12 - int((rev / max_rev) * 12))
-            desc += f"🔹 **{name}** ({tier})\n `{chart}` A$ {rev:,} | Margin A$ {margin:,}\n\n"
-        embed.description = desc; return embed
+        for name, price, cost, rev, tier, target, sold in prods:
+            # Replicate the exact simulation math!
+            tier_data = QUALITY_TIERS.get(tier, QUALITY_TIERS['Standard'])
+            adj_price = int(price * tier_data['price_mult'])
+            adj_cost = int(cost * tier_data['cost_mult'] * (1 - cost_red))
+            
+            global_sector_base = SECTOR_BASE_COSTS.get(sector, 300)
+            
+            margin = adj_price - adj_cost
+            
+            # FIX 2: Consistently use 'margin_ratio'
+            margin_ratio = price / max(1, global_sector_base)
+            
+            # Determine true health (Updated to match the new Dynamic Boycott limits!)
+            if margin_ratio > 8.0: health = "⬛ TOTAL BOYCOTT (0% Demand)"
+            elif margin_ratio > 4.0: health = "🟥 SEVERE OVERPRICING (Dynamic Demand Loss)"
+            elif margin_ratio > 2.5: health = "🟧 HIGH PRICE (70% Demand Loss)"
+            elif margin_ratio > 1.5: health = "🟨 MODERATE PRICE (20% Demand Loss)"
+            else: health = "🟩 OPTIMAL PRICING (100% Demand)"
+
+            desc += (
+                f"<a:wt_torosilly:1480580853720551637> **{name}** (`{tier}`)\n"
+                f"└ **Set Price:** A$ {price:,} | **Base Cost:** A$ {cost:,}\n"
+                f"└ **Adj. Margin:** A$ {margin:,} *(True Ratio: {margin_ratio:.2f}x)*\n"
+                f"└ **Target:** {target:,}/day | **Lifetime Sold:** {sold:,} units\n"
+                f"└ **Total Rev:** A$ {rev:,}\n"
+                f"└ *Market Status:* {health}\n\n"
+            )
+            
+        embed.description = desc
+        return embed # FIX 3: Removed the 'a' at the end
     
     async def interaction_check(self, i: discord.Interaction) -> bool:
         if i.user.id != self.user_id:
@@ -612,8 +735,13 @@ class OpsView(discord.ui.View):
         view3.add_item(ProductTypeDropdown(sector))
         await i.response.send_message(f"📦 Select a base product type to develop for your **{sector}** company:", view=view3, ephemeral=False)
 
-    @discord.ui.button(label="Edit Prices", style=discord.ButtonStyle.secondary, row=2)
-    async def edit_price(self, i: discord.Interaction, btn):
+
+    @discord.ui.button(label="CEO Payout", style=discord.ButtonStyle.secondary, row=3)
+    async def payout_btn(self, i: discord.Interaction, btn):
+        await i.response.send_modal(PayoutModal())
+
+    @discord.ui.button(label="Edit Product", style=discord.ButtonStyle.secondary, row=2)
+    async def edit_product_btn(self, i: discord.Interaction, btn):
         with get_db_cursor() as c:
             c.execute("SELECT sector FROM businesses WHERE user_id = ?", (i.user.id,))
             row = c.fetchone()
@@ -622,8 +750,8 @@ class OpsView(discord.ui.View):
             return await i.response.send_message("<a:wt_torono:1480580892706603018> You need a business sector first!", ephemeral=True)
             
         view = discord.ui.View()
-        view.add_item(EditPriceDropdown(i.user.id, row[0]))
-        await i.response.send_message("⚖️ Select the product you wish to re-price:", view=view, ephemeral=True)
+        view.add_item(EditProductDropdown(i.user.id, row[0]))
+        await i.response.send_message("<a:wt_torosilly:1480580853720551637> Select the product you wish to modify:", view=view, ephemeral=True)
     
     @discord.ui.button(label="Upgrade HQ", style=discord.ButtonStyle.secondary, row=2)
     async def hq(self, i: discord.Interaction, btn):
@@ -751,27 +879,17 @@ class TerminalView(discord.ui.View):
     @discord.ui.button(label="Balance Sheet", style=discord.ButtonStyle.secondary, row=0, emoji="<:i_cupid:1426518951961038929>")
     async def balance(self, i: discord.Interaction, btn):
         with get_db_cursor() as c:
-            c.execute("SELECT capital, loan_balance, owner_salary, last_report, vp_title FROM businesses WHERE user_id = ?", (i.user.id,))
+            c.execute("SELECT capital, loan_balance, last_report FROM businesses WHERE user_id = ?", (i.user.id,))
             biz = c.fetchone()
-            c.execute("SELECT SUM(salary), COUNT(id) FROM employees WHERE user_id = ?", (i.user.id,))
-            emps = c.fetchone()
-        emp_count, total_payroll = emps[1] or 0, emps[0] or 0
-        overhead = 10000 + (emp_count * 500)
+            
+        # Using Discord 'diff' syntax colors + text Green and - text Red
         receipt = (
-            "```receipt\n"
-            "---- ---- ---- ---- ---- ---- ----\n"
-            "       FINANCIAL STATEMENT        \n"
-            "---- ---- ---- ---- ---- ---- ----\n\n"
-            f"LIQUID CAPITAL : A$ {biz[0]:,}\n"
-            f"LOAN BALANCE   : A$ {biz[1]:,}\n\n"
-            "----------------------------------\n"
-            "       DAILY EXPENDITURES         \n"
-            "----------------------------------\n\n"
-            f"EXEC SALARY    : A$ {biz[2]:,}\n"
-            f"STAFF PAYROLL  : A$ {total_payroll:,}\n"
-            f"FIXED OVERHEAD : A$ {overhead:,}\n\n"
-            "---- ---- ---- ---- ---- ---- ----\n"
-            f"LATEST REPORT:\n{biz[3]}\n```"
+            "```diff\n"
+            "--- CORPORATE BALANCE SHEET ---\n\n"
+            f"  LIQUID CAPITAL : A$ {biz[0]:,}\n"
+            f"  LOAN BALANCE   : A$ {biz[1]:,}\n\n"
+            "--- LATEST CYCLE LEDGER ---\n"
+            f"{biz[2]}\n```"
         )
         embed = discord.Embed(title="꒰ა chérie  ⸝⸝", color=0xffffff, description=receipt)
         await i.response.send_message(embed=embed, ephemeral=True)
@@ -820,16 +938,35 @@ class TerminalView(discord.ui.View):
             c.execute("SELECT name, capital, is_public FROM businesses WHERE user_id = ?", (i.user.id,))
             biz = c.fetchone()
             if not biz: return await i.response.send_message("No business found.", ephemeral=True)
-            if biz[2] == 1: return await i.response.send_message("Silly, your business ia already public!", ephemeral=True)
-            if biz[1] < 2_000_000: return await i.response.send_message("You need atleast A$ 2,00,000 to IPO.", ephemeral=True)
+            if biz[2] == 1: return await i.response.send_message("Silly, your business is already public!", ephemeral=True)
+            if biz[1] < 2_000_000: return await i.response.send_message("You need at least A$ 2,000,000 to IPO.", ephemeral=True)
+            
             c.execute("SELECT COUNT(id) FROM employees WHERE user_id = ?", (i.user.id,))
             emp_count = c.fetchone()[0]
+            
+            # --- NEW: IPO PAYOUT CALCULATION ---
+            # The company receives a 20% capital grant from institutional investors!
+            ipo_bonus = int(biz[1] * 0.20)
+            
             start_price = max(500, int((biz[1] * 0.001) + (emp_count * 10)))
             sym = biz[0][:4].upper()
-            c.execute("UPDATE businesses SET is_public = 1 WHERE user_id = ?", (i.user.id,))
+            
+            # Add the IPO bonus to their capital
+            c.execute("UPDATE businesses SET is_public = 1, capital = capital + ? WHERE user_id = ?", (ipo_bonus, i.user.id))
+            
         with get_eco_cursor() as c_eco:
-            c_eco.execute("INSERT OR IGNORE INTO stocks (symbol, name, price, volatility, trend) VALUES (?, ?, ?, 15, 'FLAT')", (sym, biz[0], start_price))
-        await i.response.send_message(f"<a:wt_torojumping:1480580859042992209> **After a thorough review, the Athena Central Reserve approved your IPO!** Your company is now trading as **{sym}** at A$ {start_price:,}. Don't forget your day ones when you get rich..", ephemeral=False)
+            c_eco.execute("INSERT OR IGNORE INTO stocks (symbol, name, price, volatility, trend) VALUES (?, ?, ?, 3, 'FLAT')", (sym, biz[0], start_price))
+            
+        await i.response.send_message(f"<a:wt_torojumping:1480580859042992209> **IPO SUCCESSFUL!**\nYour company is now trading as **{sym}** at A$ {start_price:,}.\n\nInstitutional underwriters have injected **A$ {ipo_bonus:,}** into your corporate capital! Don't forget your day ones when you get rich.", ephemeral=False)
+    
+    @discord.ui.button(label="Issue Shares (Dilute)", style=discord.ButtonStyle.secondary, row=1, emoji="<a:w_tear:1375482116749529098>")
+    async def dilute_btn(self, i: discord.Interaction, btn):
+        with get_db_cursor() as c:
+            c.execute("SELECT is_public FROM businesses WHERE user_id = ?", (i.user.id,))
+            is_pub = c.fetchone()
+            if not is_pub or is_pub[0] == 0:
+                return await i.response.send_message("❌ You must IPO first before you can issue new shares to the public market.", ephemeral=True)
+        await i.response.send_modal(DiluteSharesModal())
     
     @discord.ui.button(label="Marketing", style=discord.ButtonStyle.secondary, row=2, emoji="<:i_satan:1426518223133737000>")
     async def market(self, i: discord.Interaction, btn):
@@ -846,6 +983,80 @@ class TerminalView(discord.ui.View):
     @discord.ui.button(label="Espionage", style=discord.ButtonStyle.secondary, row=3, emoji="<:i_lucifer:1426518321544564798>")
     async def espionage(self, i: discord.Interaction, btn):
         await i.response.send_modal(EspionageModal())
+
+    @discord.ui.button(label="Audit", style=discord.ButtonStyle.secondary, row=3, emoji="<a:c_rolling:1218512150549499904>")
+    async def audit(self, i: discord.Interaction, btn):
+        with get_db_cursor() as c:
+            c.execute("SELECT capital, owner_salary, days_open, last_report, sector, strike_active, last_audit FROM businesses WHERE user_id = ?", (self.user_id,))
+            biz = c.fetchone()
+            
+            # --- 4 HOUR COOLDOWN CHECK ---
+            now = time.time()
+            if biz[6] and (now - biz[6]) < 14400: # 4 hours = 14400 seconds
+                rem = int(14400 - (now - biz[6]))
+                return await i.response.send_message(f"⏱️ Your corporate consultants are currently analyzing data. Come back in **{rem // 3600}h {(rem % 3600)//60}m**.", ephemeral=True)
+                
+            c.execute("UPDATE businesses SET last_audit = ? WHERE user_id = ?", (now, self.user_id))
+            
+            # Fetch employees
+            c.execute("SELECT COUNT(id), SUM(salary), AVG(morale) FROM employees WHERE user_id = ?", (self.user_id,))
+            emps = c.fetchone()
+            emp_count = emps[0] or 0
+            avg_morale = emps[2] or 100
+            
+            # Fetch products
+            c.execute("SELECT name, unit_price, cost_to_make, production_target, quality_tier FROM business_products WHERE user_id = ? AND active = 1", (self.user_id,))
+            prods = c.fetchall()
+            
+            # --- CONDUCT ANALYSIS ---
+            advice = []
+            
+            if biz[5] == 1 or avg_morale < 25:
+                advice.append("🚨 **CRITICAL: Worker Strike Imminent/Active.** Morale is critically low. Use the HR terminal to host an event immediately or settle the strike, otherwise production is frozen.")
+            elif avg_morale < 50:
+                advice.append("⚠️ **Warning: Low Morale.** Workers are unhappy. A strike will occur if it drops below 20%. Invest in HR events.")
+            
+            if not prods:
+                advice.append("📦 **No Products:** You aren't producing anything. Launch a product in the Operations terminal to generate revenue.")
+            else:
+                total_target = sum(p[3] for p in prods)
+                
+                # Estimate Factory Capacity based on staff and tech
+                tech_level = 0
+                c.execute("SELECT tech_level FROM businesses WHERE user_id = ?", (self.user_id,))
+                tech_res = c.fetchone()
+                if tech_res: tech_level = tech_res[0]
+                
+                eng_mult = 1.0 + (tech_level * 0.02)
+                factory_cap = int((emp_count * 50) * eng_mult) 
+                
+                if total_target > (factory_cap * 1.5):
+                    advice.append(f"⚠️ **Overproduction:** Your Daily Targets (approx {total_target:,}) vastly exceed your factory's capacity (approx {factory_cap:,}). You are paying baseline costs for units you physically cannot build. Lower your targets or hire more staff.")
+                elif factory_cap > (total_target * 2):
+                    advice.append(f"⚠️ **Overstaffed:** You have {emp_count} employees but low production targets. You are wasting capital on payroll for idle workers. Fire staff or increase production targets.")
+                
+                # Pricing checks
+                for p in prods:
+                    tier_data = QUALITY_TIERS.get(p[4], QUALITY_TIERS['Standard'])
+                    adj_cost = p[2] * tier_data['cost_mult']
+                    margin = p[1] / max(1, adj_cost)
+                    
+                    if margin > 4.0:
+                        advice.append(f"🟥 **SEVERE OVERPRICING:** Your product **{p[0]}** is marked up by over 400%. You are losing 95% of your sales volume to buyer boycotts. Edit the price down immediately.")
+                    elif margin > 2.5:
+                        advice.append(f"🟧 **High Price:** Your product **{p[0]}** is marked up over 2.5x. You are losing 70% of potential sales. Consider lowering to the 'Sweet Spot' (2.5x base cost).")
+            
+            if biz[0] < 50000:
+                advice.append("📉 **Low Capital:** Your liquid capital is dangerously low. Consider injecting personal funds to stay afloat.")
+                
+            if not advice:
+                advice.append("🟩 **Optimal Operations:** Your pricing, staffing, and morale look perfectly balanced! Keep up the good work, CEO.")
+                
+            embed = discord.Embed(title="꒰ა Firm Analysis & Audit ⸝⸝", color=0xffffff)
+            embed.description = "The corporate consultants have reviewed your operations:\n\n" + "\n\n".join(advice)
+            embed.set_footer(text="Next audit available in 4 hours.")
+            
+            await i.response.send_message(embed=embed, ephemeral=True)
         
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.user_id:
@@ -946,8 +1157,11 @@ class Business(commands.Cog):
                 philosophy TEXT DEFAULT 'Mass Market', reputation INTEGER DEFAULT 100,
                 is_public INTEGER DEFAULT 0, description TEXT DEFAULT '*A rising corporate empire.*',
                 sector TEXT, tech_level INTEGER DEFAULT 0, marketing_budget INTEGER DEFAULT 0,
-                quarter INTEGER DEFAULT 1, next_board_meeting REAL DEFAULT 0, strike_active INTEGER DEFAULT 0
+                quarter INTEGER DEFAULT 1, next_board_meeting REAL DEFAULT 0, strike_active INTEGER DEFAULT 0,
+                last_audit REAL DEFAULT 0
             )''')
+            
+            
             c.execute('''CREATE TABLE IF NOT EXISTS employees (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, name TEXT,
                 salary INTEGER, morale INTEGER, specialization TEXT DEFAULT 'None'
@@ -972,7 +1186,7 @@ class Business(commands.Cog):
                 PRIMARY KEY(user_id, quarter)
             )''')
             for table, col, dtype in [
-                ("businesses", "sector", "TEXT"), ("businesses", "tech_level", "INTEGER DEFAULT 0"),
+                ("businesses", "sector", "TEXT"), ("businesses", "last_audit", "REAL DEFAULT 0"), ("businesses", "tech_level", "INTEGER DEFAULT 0"),
                 ("businesses", "marketing_budget", "INTEGER DEFAULT 0"), ("businesses", "quarter", "INTEGER DEFAULT 1"),
                 ("businesses", "next_board_meeting", "REAL DEFAULT 0"), ("businesses", "strike_active", "INTEGER DEFAULT 0"),
                 ("business_products", "category", "TEXT"), ("business_products", "quality_tier", "TEXT DEFAULT 'Standard'")
@@ -1059,6 +1273,23 @@ class Business(commands.Cog):
         await i.response.send_message(embed=pages[0], view=view, ephemeral=False)
 
 
+    @app_commands.command(name="biz_repair_market", description="ADMIN: Global database sync to fix all legacy/corrupted base costs")
+    @app_commands.default_permissions(administrator=True)
+    async def biz_repair_market(self, i: discord.Interaction):
+        await i.response.defer(ephemeral=True)
+        
+        updated_count = 0
+        with get_db_cursor() as c:
+            # Loop through your official design constants and force the DB rows to obey
+            for sector, correct_cost in SECTOR_BASE_COSTS.items():
+                c.execute(
+                    "UPDATE business_products SET cost_to_make = ? WHERE category = ? AND cost_to_make != ?",
+                    (correct_cost, sector, correct_cost)
+                )
+                updated_count += c.rowcount
+                
+        await i.followup.send(f"🔬 **Market Core Cleansed!** Successfully re-aligned **{updated_count}** corrupted product base costs across all server conglomerates to match official Central Reserve guidelines.")
+
     @app_commands.command(name="biz_setcapital", description="ADMIN: Forcefully set a business's capital")
     @app_commands.default_permissions(administrator=True)
     async def biz_setcapital(self, i: discord.Interaction, user: discord.Member, amount: int):
@@ -1075,7 +1306,45 @@ class Business(commands.Cog):
             
         await i.response.send_message(f"<a:wt_toroexclaim:1480581004317036624> Successfully adjusted **{biz[0]}**'s capital to A$ {amount:,}.", ephemeral=True)
 
+    @commands.command(name="cyclenext")
+    @commands.is_owner() # Strict security: Only YOU can run this
+    async def cyclenext(self, ctx):
+        await ctx.send("⚙️ **Manual Override:** Forcing the Central Reserve corporate cycle to execute...")
+        
+        # 1. Reset the time guard in the database to 0 so the simulation allows it
+        with get_db_cursor() as c:
+            c.execute("INSERT OR REPLACE INTO config (key, value) VALUES ('last_daily_cycle', '0')")
+            
+        # 2. Call the underlying async task coroutine directly
+        await self.daily_cycle.coro(self)
+        
+        await ctx.send("✅ **Cycle Executed!** Ledgers, products, and market statuses have been successfully updated.")
 
+    @app_commands.command(name="biz_credit_legacy_ipos", description="ADMIN: Grant the retroactive 20% IPO underwriting capital bonus to existing public companies")
+    @app_commands.default_permissions(administrator=True)
+    async def biz_credit_legacy_ipos(self, i: discord.Interaction):
+        await i.response.defer(ephemeral=True)
+        
+        credited_companies = []
+        with get_db_cursor() as c:
+            # Find all businesses that are already public
+            c.execute("SELECT user_id, name, capital FROM businesses WHERE is_public = 1")
+            public_congloms = c.fetchall()
+            
+            for uid, name, capital in public_congloms:
+                # Calculate what their 20% underwriter injection should be
+                bonus = int(capital * 0.20)
+                
+                # Apply cash injection
+                c.execute("UPDATE businesses SET capital = capital + ? WHERE user_id = ?", (bonus, uid))
+                log_business_event(c, uid, "LEGACY_IPO_CREDIT", f"Received retroactive IPO injection of A$ {bonus:,}")
+                credited_companies.append(f"• **{name}** -> Injected +A$ {bonus:,}")
+                
+        if not credited_companies:
+            return await i.followup.send("No active public corporations found to credit.")
+            
+        report = "🏛️ **Institutional Underwriting Adjustment Complete!**\n\n" + "\n".join(credited_companies)
+        await i.followup.send(report)
 
     @app_commands.command(name="bizawardcar", description="Gift an exclusive luxury corporate vehicle to a CEO")
     @app_commands.default_permissions(administrator=True)
@@ -1204,19 +1473,26 @@ class Business(commands.Cog):
             
             margin_ratio = adj_price / max(1, adj_cost)
             
-            # --- THE LOOPHOLE KILLER: Hard cuts to final volume ---
-            if margin_ratio > 4.0: 
-                sold = int(base_sold * 0.05)   # 95% of stock rots on shelves
+            # --- THE LOOPHOLE KILLER v2 (Dynamic Scaling Boycott) ---
+            if margin_ratio > 8.0:
+                sold = 0                       # Total market boycott! Overpriced trash won't sell a single unit.
+            elif margin_ratio > 4.0: 
+                # Scales sales down dynamically from 5% to 0% as markup nears 8x
+                decay = max(0.0, 1.0 - (margin_ratio - 4.0) / 4.0)
+                sold = int(base_sold * 0.05 * decay)   
             elif margin_ratio > 2.5: 
                 sold = int(base_sold * 0.30)   # 70% of stock rots on shelves
             elif margin_ratio > 1.5: 
                 sold = int(base_sold * 0.80)   # 20% of stock rots on shelves
             else:
-                sold = base_sold               # Fair price = keep all sales
+                sold = base_sold               # Fair price = keep all sales        # Fair price = keep all sales
+            
             revenue = sold * adj_price
             tot_rev += revenue
             tot_cost += made * (adj_cost * aud_mult)
-            c.execute("UPDATE business_products SET lifetime_revenue = lifetime_revenue + ? WHERE id = ?", (revenue, p_id))
+            
+            # --- UPDATE BOTH REVENUE AND LIFETIME SOLD ---
+            c.execute("UPDATE business_products SET lifetime_revenue = lifetime_revenue + ?, lifetime_sold = lifetime_sold + ? WHERE id = ?", (revenue, sold, p_id))
 
         overhead = int((10000 + emp_count * 500) * aud_mult)
         loan_pay = biz['loan_balance'] // max(1, biz['installments_left']) if biz['installments_left'] > 0 else 0
@@ -1226,7 +1502,24 @@ class Business(commands.Cog):
         total_exp = total_payroll + overhead + tot_cost + loan_pay + exec_pay
         net = int(tot_rev - total_exp)
         new_cap = biz['capital'] + net
-        c.execute("UPDATE businesses SET capital = ?, reputation = ?, last_report = ? WHERE user_id = ?", (new_cap, new_rep, f"Rev: A$ {tot_rev:,} | Exp: A$ {int(total_exp):,} | Net: A$ {net:,}", uid))
+        
+        # --- DETAILED LEDGER GENERATION ---
+        report = (
+            f"+ Gross Revenue : A$ {tot_rev:,}\n"
+            f"- Mfg Costs     : A$ {int(tot_cost):,}\n"
+            f"- Staff Payroll : A$ {total_payroll:,}\n"
+            f"- Facility Fees : A$ {overhead:,}\n"
+            f"- Exec Salary   : A$ {exec_pay:,}\n"
+        )
+        if loan_pay > 0: report += f"- Loan Payment  : A$ {loan_pay:,}\n"
+            
+        report += f"==================================\n"
+        if net >= 0: report += f"+ NET PROFIT    : A$ {net:,}"
+        else: report += f"- NET LOSS      : A$ {abs(net):,}"
+        
+        c.execute("UPDATE businesses SET capital = ?, reputation = ?, last_report = ? WHERE user_id = ?", (new_cap, new_rep, report, uid))
+        
+        # Salary payout logic
         if biz['owner_salary'] > 0 and new_cap >= exec_pay:
             with get_eco_cursor() as ec:
                 if atomic_eco_balance_update(ec, uid, biz['owner_salary']):
@@ -1336,7 +1629,32 @@ class Business(commands.Cog):
             cols = [desc[0] for desc in c.description]
             for row in c.fetchall():
                 biz = dict(zip(cols, row))
+                uid = biz['user_id']
+                sym = biz['name'][:4].upper()
+                
+                # Fetch their actual current trading stock price
+                with get_eco_cursor() as c_eco_loop:
+                    c_eco_loop.execute("SELECT price FROM stocks WHERE symbol = ?", (sym,))
+                    stock_res = c_eco_loop.fetchone()
+                
+                # --- CONFIDENCE MULTIPLIER ---
+                # Standard items default to 1.0x demand. 
+                # Elite stocks scale up to a +25% consumer demand bonus!
+                stock_price = stock_res[0] if stock_res else 1000
+                if stock_price >= 8000: confidence_mult = 1.25
+                elif stock_price >= 5000: confidence_mult = 1.15
+                elif stock_price >= 2500: confidence_mult = 1.05
+                elif stock_price < 200: confidence_mult = 0.70 # Garbage stock craters buyer confidence
+                else: confidence_mult = 1.0
+                
+                # Apply confidence multiplier temporarily to demand boost before running cycle simulation
+                c.execute("UPDATE businesses SET demand_boost = demand_boost * ? WHERE user_id = ?", (confidence_mult, uid))
+                
+                # Process the cycle
                 rpt, net = self._simulate_company_cycle(c, c_eco, biz)
+                
+                # Normal cooldown decays
+                c.execute("UPDATE businesses SET demand_boost = MAX(0.8, demand_boost * 0.95), marketing_budget = MAX(0, marketing_budget - 5000), days_open = days_open + 1 WHERE user_id = ?", (uid,))
                 c.execute("UPDATE businesses SET demand_boost = MAX(0.8, demand_boost * 0.95), marketing_budget = MAX(0, marketing_budget - 5000), days_open = days_open + 1 WHERE user_id = ?", (biz['user_id'],))
                 
                 if biz['days_open'] % 28 == 0:

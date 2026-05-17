@@ -304,6 +304,37 @@ class Investments(commands.Cog):
                               (interaction.user.id, sym, new_total_shares, new_avg_price, shares, new_avg_price))
         
         await interaction.response.send_message(f"<:stockmarket1:1503803937000521971> **Trade Executed!**\nBought **{shares:,}** shares of **{stock[1]}** for **A$ {total_cost:,}**.\n*(Average Cost Basis: A$ {new_avg_price:,.2f} per share)*")
+        # ==========================================
+        # 🏢 CORPORATE EQUITY INJECTION
+        # ==========================================
+        # 10% of the total purchase price is routed to the business's capital!
+        # (Make sure 'total_cost' and 'symbol' match your actual variable names!)
+        
+        capital_injection = int(total_cost * 0.20) 
+        
+        if capital_injection > 0:
+            try:
+                import sqlite3
+                
+                # 1. Look up the company's full name from the stock symbol
+                conn_eco = sqlite3.connect("economy.db", timeout=10)
+                cur_eco = conn_eco.cursor()
+                cur_eco.execute("SELECT name FROM stocks WHERE symbol = ?", (symbol.upper(),))
+                stock_info = cur_eco.fetchone()
+                conn_eco.close()
+                
+                if stock_info:
+                    business_name = stock_info[0]
+                    
+                    # 2. Add the capital directly to their corporate bank in business.db
+                    conn_biz = sqlite3.connect("business.db", timeout=10)
+                    cur_biz = conn_biz.cursor()
+                    cur_biz.execute("UPDATE businesses SET capital = capital + ? WHERE name = ?", (capital_injection, business_name))
+                    conn_biz.commit()
+                    conn_biz.close()
+            except Exception as e:
+                print(f"Equity Injection Error: {e}") # Failsafe so the buy command doesn't crash
+        # ==========================================
 
     @invest_group.command(name="sell", description="Sell your owned shares")
     @app_commands.autocomplete(symbol=portfolio_autocomplete)

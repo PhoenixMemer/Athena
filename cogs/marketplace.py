@@ -269,7 +269,7 @@ class MarketplaceDropdown(discord.ui.Select):
                     s_name = seller.name if seller else "Inactive User"
                     desc += f"**{name}** `[Listing #{lid}]`\n"
                     desc += f"**Seller:** {s_name}\n"
-                    desc += f"<:money_athena:1501918414867005511> **Price:** A$ {price:,}\n\n"
+                    desc += f"<:athenacoin:1503804322280902767> **Price:** A$ {price:,}\n\n"
                 embed.description = desc if listings else "The trading floor is currently empty. List your properties with `/marketplace list`!"
                 
             elif category == "Vehicles":
@@ -280,7 +280,7 @@ class MarketplaceDropdown(discord.ui.Select):
                 for vid, name, price, bonus in vehicles:
                     desc += f"**{name}** `[{vid}]`\n"
                     desc += f"**Commute Bonus:** -{bonus}m On Work Cooldown\n"
-                    desc += f"<:money_athena:1501918414867005511> **Price:** A$ {price:,}\n\n"
+                    desc += f"<:athenacoin:1503804322280902767> **Price:** A$ {price:,}\n\n"
                 embed.description = desc
                 
             else:
@@ -291,7 +291,7 @@ class MarketplaceDropdown(discord.ui.Select):
                 for pid, name, price, rent in properties:
                     desc += f"**{name}** `[{pid}]`\n"
                     desc += f"**Price:** A$ {price:,}\n"
-                    desc += f"<:money_athena:1501918414867005511> **Base Rent:** A$ {rent:,} / day\n\n"
+                    desc += f"<:athenacoin:1503804322280902767> **Base Rent:** A$ {rent:,} / day\n\n"
                 embed.description = desc
 
         await interaction.response.edit_message(embed=embed, view=self.view)
@@ -550,7 +550,7 @@ class Marketplace(commands.Cog):
             actual_rent = int(base_rent * (1.0 + (1.5 * (quality / 100.0)))) if not repair else 0
             total_rent += actual_rent
             status = "**NEEDS SERVICE (Rent Paused)**" if repair else "✅ Active"
-            desc += f"**{name}**\n{make_progress_bar(quality)}\n**Status:** {status}\n<:money_athena:1501918414867005511> **Daily Rent:** A$ {actual_rent:,}\n\n"
+            desc += f"**{name}**\n{make_progress_bar(quality)}\n**Status:** {status}\n<:athenacoin:1503804322280902767> **Daily Rent:** A$ {actual_rent:,}\n\n"
             
         desc += f"**Total Daily Rent:** `A$ {total_rent:,}`"
         e.description = desc

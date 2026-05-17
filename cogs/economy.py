@@ -358,6 +358,90 @@ class Economy(commands.Cog):
             bal, active_card = self.get_wallet_data(ctx.author.id)
             image_buffer = await self.generate_wallet_card(ctx.author, bal, active_card)
             await ctx.send(file=discord.File(fp=image_buffer, filename="wallet.png"))
+
+    @app_commands.command(name="rob", description="Attempt to rob another user. High risk, high reward.")
+    async def rob(self, interaction: discord.Interaction, target: discord.Member):
+        if target.id == interaction.user.id:
+            return await interaction.response.send_message("❌ You cannot rob yourself.", ephemeral=True)
+        if target.bot:
+            return await interaction.response.send_message("❌ You cannot rob a bot.", ephemeral=True)
+            
+        with get_db_cursor() as cursor:
+            # 1. Create a persistent cooldown table automatically if it doesn't exist
+            cursor.execute('''CREATE TABLE IF NOT EXISTS command_cooldowns (
+                user_id INTEGER, command_name TEXT, last_used REAL,
+                PRIMARY KEY (user_id, command_name)
+            )''')
+            
+            # 2. Check Database Cooldown (1 hour = 3600 seconds)
+            now = time.time()
+            cooldown_duration = 3600
+            cursor.execute("SELECT last_used FROM command_cooldowns WHERE user_id = ? AND command_name = 'rob'", (interaction.user.id,))
+            row = cursor.fetchone()
+            
+            if row:
+                last_used = row[0]
+                if now - last_used < cooldown_duration:
+                    rem = int(cooldown_duration - (now - last_used))
+                    minutes, seconds = divmod(rem, 60)
+                    return await interaction.response.send_message(
+                        f"<a:wt_toronerd:1480580983593111602> Lay low! The cops are still looking for you. Try again in **{minutes}m {seconds}s**.", 
+                        ephemeral=True
+                    )
+            
+            # 3. Check robber's balance (Needs seed money)
+            cursor.execute("SELECT balance FROM wallets WHERE user_id = ?", (interaction.user.id,))
+            robber_bal = cursor.fetchone()
+            robber_bal = robber_bal[0] if robber_bal else 0
+            
+            if robber_bal < 500:
+                return await i.response.send_message("❌ You need at least **A$ 500** to fund a robbery attempt (bribes, getaway car, etc.).", ephemeral=True)
+
+            # 4. Check target's balance
+            cursor.execute("SELECT balance FROM wallets WHERE user_id = ?", (target.id,))
+            target_bal = cursor.fetchone()
+            target_bal = target_bal[0] if target_bal else 0
+            
+            if target_bal < 1000:
+                return await interaction.response.send_message(f"❌ **{target.name}** is broke. They don't have enough money to be worth robbing.", ephemeral=True)
+
+            # 5. Lock in the new cooldown timestamp right now before calculations run
+            cursor.execute("INSERT OR REPLACE INTO command_cooldowns (user_id, command_name, last_used) VALUES (?, 'rob', ?)", (interaction.user.id, now))
+
+            # 6. Robbery mechanics (40% success rate)
+            success_chance = random.random()
+            
+            if success_chance > 0.60: 
+                # SUCCESS
+                stolen_amount = int(target_bal * random.uniform(0.05, 0.15)) # Steal 5% to 15%
+                
+                # Execute transfer
+                atomic_balance_update(cursor, target.id, -stolen_amount)
+                atomic_balance_update(cursor, interaction.user.id, stolen_amount)
+                
+                log_transaction(cursor, interaction.user.id, stolen_amount, "ROB_SUCCESS", f"Robbed {target.name}")
+                log_transaction(cursor, target.id, -stolen_amount, "ROBBED", f"Robbed by {interaction.user.name}")
+                
+                embed = discord.Embed(title="꒰ა The Heist was a Success! ⸝⸝", color=0xffffff)
+                embed.description = f"You slipped past security and successfully robbed **{target.mention}**!\n\n **Stolen:** <:athenacoin:1503804322280902767> A$ {stolen_amount:,} <:athenacoin:1503804322280902767>"
+                await interaction.response.send_message(embed=embed)
+            else:
+                # FAIL
+                fine = max(500, int(robber_bal * 0.10))
+                
+                atomic_balance_update(cursor, interaction.user.id, -fine)
+                log_transaction(cursor, interaction.user.id, -fine, "ROB_FAIL", f"Caught trying to rob {target.name}")
+                
+                embed = discord.Embed(title="꒰ა Busted! ⸝⸝", color=0xffffff)
+                embed.description = f"You were caught trying to rob **{target.mention}**!\n\nThe Athena Central Reserve fined you <:athenacoin:1503804322280902767> **A$ {fine:,}** <:athenacoin:1503804322280902767>."
+                await interaction.response.send_message(embed=embed)
+
+    # Custom Error Handler to show the cooldown countdown
+    @rob.error
+    async def rob_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
+        if isinstance(error, app_commands.CommandOnCooldown):
+            minutes, seconds = divmod(error.retry_after, 60)
+            await interaction.response.send_message(f"<a:wt_toronerd:1480580983593111602> Lay low! The cops are still looking for you. Try again in **{int(minutes)}m {int(seconds)}s**.", ephemeral=True)
     
     @app_commands.command(name="statement", description="View your official Athena Bank transaction history")
     async def statement(self, interaction: discord.Interaction):
