@@ -10,7 +10,7 @@ from datetime import datetime
 from contextlib import contextmanager
 
 # ==========================================
-# 🌐 CONFIGURATION & CONSTANTS
+# CONFIGURATION & CONSTANTS
 # ==========================================
 BUSINESS_CHANNEL_ID = 1218599931837681734
 DB_PATH = "business.db"
@@ -624,19 +624,19 @@ class ProductPerformanceView(discord.ui.View):
             margin_ratio = price / max(1, global_sector_base)
             
             # Determine true health (Updated to match the new Dynamic Boycott limits!)
-            if margin_ratio > 8.0: health = "⬛ TOTAL BOYCOTT (0% Demand)"
-            elif margin_ratio > 4.0: health = "🟥 SEVERE OVERPRICING (Dynamic Demand Loss)"
-            elif margin_ratio > 2.5: health = "🟧 HIGH PRICE (70% Demand Loss)"
-            elif margin_ratio > 1.5: health = "🟨 MODERATE PRICE (20% Demand Loss)"
-            else: health = "🟩 OPTIMAL PRICING (100% Demand)"
+            if margin_ratio > 8.0: health = "⬛ Total Boycott" # (0% Demand)
+            elif margin_ratio > 4.0: health = "🟥 Severe Overpricing" # (High Demand Loss)
+            elif margin_ratio > 2.5: health = "🟧 High Price" # (70% Demand Loss)
+            elif margin_ratio > 1.5: health = "🟨 Moderate Price" # (20% Demand Loss)
+            else: health = "🟩 Optimal Pricing" #(100% Demand)
 
             desc += (
                 f"<a:wt_torosilly:1480580853720551637> **{name}** (`{tier}`)\n"
-                f"└ **Set Price:** A$ {price:,} | **Base Cost:** A$ {cost:,}\n"
+                f"└ **Sell Price:** A$ {price:,} | **Base Cost:** A$ {cost:,}\n"
                 f"└ **Adj. Margin:** A$ {margin:,} *(True Ratio: {margin_ratio:.2f}x)*\n"
                 f"└ **Target:** {target:,}/day | **Lifetime Sold:** {sold:,} units\n"
                 f"└ **Total Rev:** A$ {rev:,}\n"
-                f"└ *Market Status:* {health}\n\n"
+                f"└ **Market Status:** {health}\n\n"
             )
             
         embed.description = desc
@@ -1754,7 +1754,7 @@ class Business(commands.Cog):
             
         embed.set_image(url=banner_url)
         embed.set_thumbnail(url=i.user.display_avatar.url)
-        embed.set_footer(text="Athena Central Reserve")
+        embed.set_footer(text="Athena Central Reserve | Pending Taxes: %40 of Capital")
         
         await i.edit_original_response(content=None, embed=embed, view=TerminalView(self.bot, i.user.id))
 

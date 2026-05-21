@@ -98,7 +98,7 @@ async def on_ready():
         print(f"  - {command.name}")
     
     # Set custom status
-    activity = discord.Streaming(name="Arguing w/ the British | Mark 16.9", url="https://twitch.tv/twitch")
+    activity = discord.Streaming(name="Arguing w/ the British | Mark 17.1", url="https://twitch.tv/twitch")
     await bot.change_presence(activity=activity, status=discord.Status.online)
     print(f'Custom status set: {activity.type.name} {activity.name}')
 

@@ -413,7 +413,7 @@ class Economy(commands.Cog):
             
             if success_chance > 0.60: 
                 # SUCCESS
-                stolen_amount = int(target_bal * random.uniform(0.05, 0.15)) # Steal 5% to 15%
+                stolen_amount = int(target_bal * random.uniform(0.05)) # Steal 5% to 15%
                 
                 # Execute transfer
                 atomic_balance_update(cursor, target.id, -stolen_amount)
