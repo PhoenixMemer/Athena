@@ -1,3 +1,5 @@
+from discord import Interaction
+from __future__ import annotations
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
@@ -394,13 +396,11 @@ class Economy(commands.Cog):
             winner_id = random.choice(participants)[0]
             prize = random.randint(5000, 11000)
         
-        # Pay the winner
             atomic_balance_update(c, winner_id, prize)
-        # Clear the lottery
             c.execute("DELETE FROM lottery")
         
-        channel = self.bot.get_channel(BUSINESS_CHANNEL_ID)
-        await channel.send(f"<a:wt_torofly:1480580890185826364> **Central Reserve Lottery Winner!**\n<@{winner_id}> has won **A$ {prize:,}**!")
+            channel = self.bot.get_channel(BUSINESS_CHANNEL_ID)
+            await channel.send(f"<a:wt_torofly:1480580890185826364> **Central Reserve Lottery Winner!**\n<@{winner_id}> has won **A$ {prize:,}**!")
 
 @app_commands.command(name="lottery", description="Sign up for the 8-hour Central Reserve Lottery")
 async def lottery_signup(self, i: "discord.Interaction"):

@@ -1,3 +1,5 @@
+from discord import Interaction
+from __future__ import annotations
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
@@ -1810,7 +1812,7 @@ async def lottery_cmd(self, ctx):
             net -= tax_bill
     
     # Log tax payment
-            log_business_event(c, user_id, "TAX_PAID", f"Paid {tax_bill} in taxes")
+            log_business_event(c, uid, "TAX_PAID", f"Paid {tax_bill} in taxes")
     
     # Add tax to central reserve pool (if this feature is implemented)
             try:
@@ -1833,6 +1835,9 @@ async def lottery_cmd(self, ctx):
         if net_profit >= 0: report += f"+ NET PROFIT    : A$ {net_profit:,}"
         else: report += f"- NET LOSS      : A$ {abs(net_profit):,}"
         
+        new_rep = min(100, biz['reputation'] + 2 + rep_boost)  # or your logic
+        new_cap = biz['capital'] + net  # calculate this BEFORE the UPDATE
+
         c.execute("UPDATE businesses SET capital = ?, reputation = ?, last_report = ? WHERE user_id = ?", (new_cap, new_rep, report, uid))
         
         # Salary payout logic
