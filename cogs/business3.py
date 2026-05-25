@@ -207,7 +207,7 @@ def log_business_event(cursor, user_id: int, event_type: str, description: str):
 class DiluteSharesModal(discord.ui.Modal, title='Issue Corporate Shares'):
     shares = discord.ui.TextInput(label='Number of Shares to Mint & Sell', placeholder='e.g., 500')
 
-    async def on_submit(self, i: discord.Interaction):
+    async def on_submit(self, i: "discord.Interaction"):
         try:
             shares_to_mint = int(self.shares.value)
             if shares_to_mint <= 0: raise ValueError
@@ -264,21 +264,21 @@ class DiluteSharesModal(discord.ui.Modal, title='Issue Corporate Shares'):
 
 class DescriptionModal(discord.ui.Modal, title='Set Company Bio'):
     desc = discord.ui.TextInput(label='Company Description', style=discord.TextStyle.paragraph, max_length=150, placeholder='A rising corporate empire...')
-    async def on_submit(self, i: discord.Interaction):
+    async def on_submit(self, i: "discord.Interaction"):
         with get_db_cursor() as c:
             c.execute("UPDATE businesses SET description = ? WHERE user_id = ?", (self.desc.value, i.user.id))
         await i.response.send_message("<a:wt_toroexclaim:1480581004317036624> Bio updated.", ephemeral=True)
 
 class RenameCompanyModal(discord.ui.Modal, title='Rename Company'):
     name = discord.ui.TextInput(label='New Company Name', min_length=3, max_length=30)
-    async def on_submit(self, i: discord.Interaction):
+    async def on_submit(self, i: "discord.Interaction"):
         with get_db_cursor() as c:
             c.execute("UPDATE businesses SET name = ? WHERE user_id = ?", (self.name.value, i.user.id))
         await i.response.send_message(f"<a:wt_toroexclaim:1480581004317036624> Company renamed to {self.name.value}.", ephemeral=True)
 
 class SetSalaryModal(discord.ui.Modal, title='Executive Payroll'):
     salary = discord.ui.TextInput(label='Daily Personal Salary (A$)', placeholder='e.g., 5000', max_length=7)
-    async def on_submit(self, i: discord.Interaction):
+    async def on_submit(self, i: "discord.Interaction"):
         try:
             amt = int(self.salary.value)
             if amt < 0: raise ValueError
@@ -290,7 +290,7 @@ class SetSalaryModal(discord.ui.Modal, title='Executive Payroll'):
 
 class InvestModal(discord.ui.Modal, title='Inject Personal Capital'):
     amount = discord.ui.TextInput(label='Amount (A$)', placeholder='e.g., 100000')
-    async def on_submit(self, i: discord.Interaction):
+    async def on_submit(self, i: "discord.Interaction"):
         try:
             amt = int(self.amount.value)
             if amt <= 0: raise ValueError
@@ -317,7 +317,7 @@ class ProductModal(discord.ui.Modal):
         self.sector = sector
         self.product_type = product_type
 
-    async def on_submit(self, i: discord.Interaction):
+    async def on_submit(self, i: "discord.Interaction"):
         try:
             price, qty = int(self.p_price.value), int(self.p_qty.value)
             cost = self.base_cost
@@ -348,7 +348,7 @@ class EditProductModal(discord.ui.Modal):
         self.product_id = product_id
         self.base_cost = base_cost
 
-    async def on_submit(self, i: discord.Interaction):
+    async def on_submit(self, i: "discord.Interaction"):
         try:
             price = int(self.new_price.value)
             qty = int(self.new_qty.value)
@@ -369,7 +369,7 @@ class ProductTypeDropdown(discord.ui.Select):
         opts = [discord.SelectOption(label=item, value=item) for item in catalog]
         super().__init__(placeholder=f"Select base product type for {sector}...", options=opts)
         
-    async def callback(self, i: discord.Interaction):
+    async def callback(self, i: "discord.Interaction"):
         product_type = self.values[0]
         # NOW we pop open the Modal to get their custom name and numbers!
         await i.response.send_modal(ProductModal(self.sector, product_type))
@@ -386,7 +386,7 @@ class EditProductDropdown(discord.ui.Select):
         
         super().__init__(placeholder="Select a product to configure...", options=opts)
 
-    async def callback(self, i: discord.Interaction):
+    async def callback(self, i: "discord.Interaction"):
         if self.values[0] == "none": return
         
         product_id = int(self.values[0])
@@ -408,7 +408,7 @@ class UpgradeProductDropdown(discord.ui.Select):
                 opts.append(discord.SelectOption(label=f"{name} → {next_tier}", description=f"Current: {tier}", value=f"{pid}:{next_tier}"))
         if not opts: opts.append(discord.SelectOption(label="No products to upgrade", value="none"))
         super().__init__(placeholder="Upgrade product tier...", options=opts)
-    async def callback(self, i: discord.Interaction):
+    async def callback(self, i: "discord.Interaction"):
         if self.values[0] == "none": return
         pid, new_tier = self.values[0].split(":")
         with get_db_cursor() as c:
@@ -422,7 +422,7 @@ class UpgradeProductDropdown(discord.ui.Select):
 
 class MarketingModal(discord.ui.Modal, title='Marketing Blitz'):
     amount = discord.ui.TextInput(label='Amount to spend (A$)', placeholder='e.g., 100000')
-    async def on_submit(self, i: discord.Interaction):
+    async def on_submit(self, i: "discord.Interaction"):
         try:
             amt = int(self.amount.value)
             if amt <= 0: raise ValueError
@@ -440,7 +440,7 @@ class MarketingModal(discord.ui.Modal, title='Marketing Blitz'):
 
 class DividendModal(discord.ui.Modal, title='Pay Dividends'):
     amount = discord.ui.TextInput(label='Amount to distribute (A$)', placeholder='e.g., 50000')
-    async def on_submit(self, i: discord.Interaction):
+    async def on_submit(self, i: "discord.Interaction"):
         try:
             amt = int(self.amount.value)
             if amt <= 0: raise ValueError
@@ -467,7 +467,7 @@ class DividendModal(discord.ui.Modal, title='Pay Dividends'):
 
 class RndInvestModal(discord.ui.Modal, title='Invest in R&D'):
     amount = discord.ui.TextInput(label='Amount to invest (A$)', placeholder='e.g., 50000')
-    async def on_submit(self, i: discord.Interaction):
+    async def on_submit(self, i: "discord.Interaction"):
         try:
             amt = int(self.amount.value)
             if amt <= 0: raise ValueError
@@ -493,7 +493,7 @@ class RndInvestModal(discord.ui.Modal, title='Invest in R&D'):
 
 class BannerModal(discord.ui.Modal, title='Set Banner'):
     url = discord.ui.TextInput(label='Image URL', placeholder='e.g https://i.imgur.com/...', max_length=300)
-    async def on_submit(self, i: discord.Interaction):
+    async def on_submit(self, i: "discord.Interaction"):
         with get_db_cursor() as c:
             c.execute("INSERT OR REPLACE INTO config (key, value) VALUES ('newspaper_banner', ?)", (self.url.value,))
         await i.response.send_message("<a:wt_toroexclaim:1480581004317036624> Banner updated!", ephemeral=True)
@@ -503,7 +503,7 @@ class PhilosophyDropdown(discord.ui.Select):
         opts = [discord.SelectOption(label="Artisan / Premium", value="Artisan"),
                 discord.SelectOption(label="Mass Market", value="Mass Market")]
         super().__init__(placeholder="Production Philosophy...", options=opts)
-    async def callback(self, i: discord.Interaction):
+    async def callback(self, i: "discord.Interaction"):
         with get_db_cursor() as c:
             c.execute("UPDATE businesses SET philosophy = ? WHERE user_id = ?", (self.values[0], i.user.id))
         await i.response.send_message(f"<a:wt_toroexclaim:1480581004317036624> Philosophy set to {self.values[0]}.", ephemeral=False)
@@ -514,7 +514,7 @@ class HireSpecialistDropdown(discord.ui.Select):
                 discord.SelectOption(label="Quality Auditor (A$ 15k)", value="Auditor"),
                 discord.SelectOption(label="Sales Shark (A$ 15k)", value="Shark")]
         super().__init__(placeholder="Hire Specialist...", options=opts)
-    async def callback(self, i: discord.Interaction):
+    async def callback(self, i: "discord.Interaction"):
         with get_db_cursor() as c:
             c.execute("SELECT capital, hq_level FROM businesses WHERE user_id = ?", (i.user.id,))
             biz = c.fetchone()
@@ -536,7 +536,7 @@ class FireEmployeeDropdown(discord.ui.Select):
         opts = [discord.SelectOption(label=f"Fire {n}", description=f"A$ {s:,}", value=str(eid)) for eid,n,s in emps[:25]]
         if not opts: opts.append(discord.SelectOption(label="No employees", value="none"))
         super().__init__(placeholder="Terminate staff...", options=opts)
-    async def callback(self, i: discord.Interaction):
+    async def callback(self, i: "discord.Interaction"):
         if self.values[0] == "none": return
         with get_db_cursor() as c:
             c.execute("DELETE FROM employees WHERE id = ?", (int(self.values[0]),))
@@ -547,7 +547,7 @@ class StartupModal(discord.ui.Modal, title='Incorporate New Business'):
     def __init__(self, use_loan: bool):
         super().__init__()
         self.use_loan = use_loan
-    async def on_submit(self, i: discord.Interaction):
+    async def on_submit(self, i: "discord.Interaction"):
         with get_eco_cursor() as c_eco:
             c_eco.execute("SELECT balance FROM wallets WHERE user_id = ?", (i.user.id,))
             bal = c_eco.fetchone()
@@ -568,7 +568,7 @@ class VPTitleDropdown(discord.ui.Select):
         self.vp_user = vp_user
         opts = [discord.SelectOption(label=t, value=t) for t in ["Chief Operating Officer (COO)", "Chief Financial Officer (CFO)", "Chief Marketing Officer (CMO)", "Vice President (VP)"]]
         super().__init__(placeholder="Select title...", options=opts)
-    async def callback(self, i: discord.Interaction):
+    async def callback(self, i: "discord.Interaction"):
         with get_db_cursor() as c:
             c.execute("UPDATE businesses SET vp_id = ?, vp_title = ? WHERE user_id = ?", (self.vp_user.id, self.values[0], i.user.id))
         await i.response.send_message(f"Congrats! <a:wt_toroexclaim:1480581004317036624> {self.vp_user.name} has been appointed as {self.values[0]}.", ephemeral=False)
@@ -582,28 +582,28 @@ class EarningsCallView(discord.ui.View):
         self.user_id = user_id
         self.quarter = quarter
 
-    async def interaction_check(self, i: discord.Interaction) -> bool:
+    async def interaction_check(self, i: "discord.Interaction") -> bool:
         if i.user.id != self.user_id:
             await i.response.send_message("<a:wt_torono:1480580892706603018> You are NOT the CEO of this company, stay away.", ephemeral=False)
             return False
         return True
 
     @discord.ui.button(label="Highlight Growth (+Demand)", style=discord.ButtonStyle.secondary, emoji="<:stockup_athena:1503776772850712616>")
-    async def opt1(self, i: discord.Interaction, btn: discord.ui.Button):
+    async def opt1(self, i: "discord.Interaction", btn: discord.ui.Button):
         with get_db_cursor() as c:
             c.execute("UPDATE businesses SET demand_boost = demand_boost + 0.15 WHERE user_id = ?", (self.user_id,))
         for child in self.children: child.disabled = True
         await i.response.edit_message(content="<a:wt_toroexclaim:1480581004317036624> Investors loved the growth strategy! Demand for your products will be boosted.", view=self)
 
     @discord.ui.button(label="Focus on Margins (+Capital)", style=discord.ButtonStyle.secondary, emoji="<:athenacoin:1503804322280902767>")
-    async def opt2(self, i: discord.Interaction, btn: discord.ui.Button):
+    async def opt2(self, i: "discord.Interaction", btn: discord.ui.Button):
         with get_db_cursor() as c:
             c.execute("UPDATE businesses SET capital = capital + 150000 WHERE user_id = ?", (self.user_id,))
         for child in self.children: child.disabled = True
         await i.response.edit_message(content="<a:wt_toroexclaim:1480581004317036624> Investors appreciated the frugal approach! They have injected A$ 150,000 into your business.", view=self)
 
     @discord.ui.button(label="Promise Returns (+Reputation)", style=discord.ButtonStyle.secondary, emoji="<:s_white2:1382052523166142486>")
-    async def opt3(self, i: discord.Interaction, btn: discord.ui.Button):
+    async def opt3(self, i: "discord.Interaction", btn: discord.ui.Button):
         with get_db_cursor() as c:
             c.execute("UPDATE businesses SET reputation = MIN(100, reputation + 15) WHERE user_id = ?", (self.user_id,))
         for child in self.children: child.disabled = True
@@ -612,7 +612,7 @@ class EarningsCallView(discord.ui.View):
 
 class PayoutModal(discord.ui.Modal, title='CEO Capital Withdrawal'):
     amount = discord.ui.TextInput(label='Amount to Withdraw (A$)', placeholder='e.g., 50000')
-    async def on_submit(self, i: discord.Interaction):
+    async def on_submit(self, i: "discord.Interaction"):
         try:
             amt = int(self.amount.value)
             if amt <= 0: raise ValueError
@@ -645,13 +645,13 @@ class BusinessGuideView(discord.ui.View):
         self.next_btn.disabled = self.current_page == len(self.embeds) - 1
 
     @discord.ui.button(label="Previous", style=discord.ButtonStyle.secondary, emoji="<:w_arrowleft:1272235695137751162>")
-    async def prev_btn(self, i: discord.Interaction, btn: discord.ui.Button):
+    async def prev_btn(self, i: "discord.Interaction", btn: discord.ui.Button):
         self.current_page -= 1
         self.update_buttons()
         await i.response.edit_message(embed=self.embeds[self.current_page], view=self)
 
     @discord.ui.button(label="Next", style=discord.ButtonStyle.secondary, emoji="<:w_arrowright:1272235711721898005>")
-    async def next_btn(self, i: discord.Interaction, btn: discord.ui.Button):
+    async def next_btn(self, i: "discord.Interaction", btn: discord.ui.Button):
         self.current_page += 1
         self.update_buttons()
         await i.response.edit_message(embed=self.embeds[self.current_page], view=self)
@@ -662,7 +662,7 @@ class ProductPerformanceView(discord.ui.View):
         self.user_id = user_id
         
     @discord.ui.button(label="Refresh", style=discord.ButtonStyle.secondary)
-    async def refresh(self, i: discord.Interaction, btn): 
+    async def refresh(self, i: "discord.Interaction", btn): 
         await i.response.edit_message(embed=self.get_embed(), view=self)
         
     def get_embed(self):
@@ -716,7 +716,7 @@ class ProductPerformanceView(discord.ui.View):
         embed.description = desc
         return embed # FIX 3: Removed the 'a' at the end
     
-    async def interaction_check(self, i: discord.Interaction) -> bool:
+    async def interaction_check(self, i: "discord.Interaction") -> bool:
         if i.user.id != self.user_id:
             await i.response.send_message("<a:wt_torono:1480580892706603018> Access Denied. This terminal does not belong to you.", ephemeral=True)
             return False
@@ -729,14 +729,14 @@ class HRView(discord.ui.View):
         self.add_item(FireEmployeeDropdown(user_id))
         self.add_item(HireSpecialistDropdown())
 
-    async def interaction_check(self, i: discord.Interaction) -> bool:
+    async def interaction_check(self, i: "discord.Interaction") -> bool:
         if i.user.id != self.user_id:
             await i.response.send_message("<a:wt_torono:1480580892706603018> Access Denied. This terminal does not belong to you.", ephemeral=True)
             return False
         return True
 
     @discord.ui.button(label="Hire Staff (A$ 2k)", style=discord.ButtonStyle.secondary, row=2)
-    async def hire(self, i: discord.Interaction, btn):
+    async def hire(self, i: "discord.Interaction", btn):
         with get_db_cursor() as c:
             c.execute("SELECT capital, hq_level FROM businesses WHERE user_id = ?", (i.user.id,))
             biz = c.fetchone()
@@ -749,7 +749,7 @@ class HRView(discord.ui.View):
         await i.response.send_message("<a:wt_toroexclaim:1480581004317036624> Wahoo, new staff hired!", ephemeral=True)
 
     @discord.ui.button(label="Host Event (A$ 5k)", style=discord.ButtonStyle.secondary, row=2)
-    async def morale(self, i: discord.Interaction, btn):
+    async def morale(self, i: "discord.Interaction", btn):
         with get_db_cursor() as c:
             c.execute("SELECT capital FROM businesses WHERE user_id = ?", (i.user.id,))
             cap = c.fetchone()[0]
@@ -758,7 +758,7 @@ class HRView(discord.ui.View):
             c.execute("UPDATE employees SET morale = MIN(100, morale + 25) WHERE user_id = ?", (i.user.id,))
         await i.response.send_message("<a:wt_torolove:1480580899430203484> Morale boosted!", ephemeral=True)
 
-    async def interaction_check(self, i: discord.Interaction) -> bool:
+    async def interaction_check(self, i: "discord.Interaction") -> bool:
         if i.user.id != self.user_id:
             await i.response.send_message("<a:wt_torono:1480580892706603018> Access Denied. This terminal does not belong to you.", ephemeral=True)
             return False
@@ -771,14 +771,14 @@ class OpsView(discord.ui.View):
         self.add_item(PhilosophyDropdown())
         self.add_item(UpgradeProductDropdown(user_id))
 
-    async def interaction_check(self, i: discord.Interaction) -> bool:
+    async def interaction_check(self, i: "discord.Interaction") -> bool:
         if i.user.id != self.user_id:
             await i.response.send_message("<a:wt_torono:1480580892706603018> Access Denied. This terminal does not belong to you.", ephemeral=True)
             return False
         return True
         
     @discord.ui.button(label="Launch Product", style=discord.ButtonStyle.secondary, row=2)
-    async def prod(self, i: discord.Interaction, btn):
+    async def prod(self, i: "discord.Interaction", btn):
         with get_db_cursor() as c:
             c.execute("SELECT sector FROM businesses WHERE user_id = ?", (i.user.id,))
             row = c.fetchone()
@@ -811,11 +811,11 @@ class OpsView(discord.ui.View):
 
 
     @discord.ui.button(label="CEO Payout", style=discord.ButtonStyle.secondary, row=3)
-    async def payout_btn(self, i: discord.Interaction, btn):
+    async def payout_btn(self, i: "discord.Interaction", btn):
         await i.response.send_modal(PayoutModal())
 
     @discord.ui.button(label="Edit Product", style=discord.ButtonStyle.secondary, row=2)
-    async def edit_product_btn(self, i: discord.Interaction, btn):
+    async def edit_product_btn(self, i: "discord.Interaction", btn):
         with get_db_cursor() as c:
             c.execute("SELECT sector FROM businesses WHERE user_id = ?", (i.user.id,))
             row = c.fetchone()
@@ -828,7 +828,7 @@ class OpsView(discord.ui.View):
         await i.response.send_message("<a:wt_torosilly:1480580853720551637> Select the product you wish to modify:", view=view, ephemeral=True)
     
     @discord.ui.button(label="Upgrade HQ", style=discord.ButtonStyle.secondary, row=2)
-    async def hq(self, i: discord.Interaction, btn):
+    async def hq(self, i: "discord.Interaction", btn):
         with get_db_cursor() as c:
             c.execute("SELECT capital, hq_level FROM businesses WHERE user_id = ?", (i.user.id,))
             biz = c.fetchone()
@@ -842,18 +842,18 @@ class OpsView(discord.ui.View):
         await i.response.send_message("<a:wt_toroexclaim:1480581004317036624> HQ Upgraded!", ephemeral=False)
         
     @discord.ui.button(label="Set Bio", style=discord.ButtonStyle.secondary, row=3)
-    async def bio(self, i: discord.Interaction, btn): await i.response.send_modal(DescriptionModal())
+    async def bio(self, i: "discord.Interaction", btn): await i.response.send_modal(DescriptionModal())
 
     @discord.ui.button(label="Set Salary", style=discord.ButtonStyle.secondary, row=3)
-    async def sal(self, i: discord.Interaction, btn): await i.response.send_modal(SetSalaryModal())
+    async def sal(self, i: "discord.Interaction", btn): await i.response.send_modal(SetSalaryModal())
 
     @discord.ui.button(label="Inject Capital", style=discord.ButtonStyle.secondary, row=3)
-    async def inject(self, i: discord.Interaction, btn): await i.response.send_modal(InvestModal())
+    async def inject(self, i: "discord.Interaction", btn): await i.response.send_modal(InvestModal())
 
 class SettlementView(discord.ui.View):
     def __init__(self, user_id): super().__init__(timeout=60); self.user_id = user_id
     @discord.ui.button(label="Pay A$ 100k Settlement", style=discord.ButtonStyle.danger)
-    async def pay(self, i: discord.Interaction, btn):
+    async def pay(self, i: "discord.Interaction", btn):
         with get_db_cursor() as c:
             c.execute("SELECT capital FROM businesses WHERE user_id = ?", (self.user_id,))
             if c.fetchone()[0] < 100_000: return await i.response.send_message("<a:wt_torono:1480580892706603018> Insufficient funds, might as well give up now.", ephemeral=True)
@@ -863,13 +863,13 @@ class SettlementView(discord.ui.View):
         await i.response.send_message("<a:wt_toroexclaim:1480581004317036624> Strike settled.", ephemeral=False)
     @discord.ui.button(label="Grant 15% Raise", style=discord.ButtonStyle.danger)
 
-    async def interaction_check(self, i: discord.Interaction) -> bool:
+    async def interaction_check(self, i: "discord.Interaction") -> bool:
         if i.user.id != self.user_id:
             await i.response.send_message("<a:wt_torono:1480580892706603018> Access Denied. This terminal does not belong to you.", ephemeral=True)
             return False
         return True
     
-    async def raise_(self, i: discord.Interaction, btn):
+    async def raise_(self, i: "discord.Interaction", btn):
         with get_db_cursor() as c:
             c.execute("UPDATE employees SET salary = CAST(salary * 1.15 AS INTEGER), morale = 80 WHERE user_id = ?", (self.user_id,))
             c.execute("UPDATE businesses SET strike_active = 0 WHERE user_id = ?", (self.user_id,))
@@ -882,13 +882,13 @@ class BoardMeetingView(discord.ui.View):
         self.user_id = user_id
         self.crisis = crisis
 
-    async def interaction_check(self, i: discord.Interaction) -> bool:
+    async def interaction_check(self, i: "discord.Interaction") -> bool:
         if i.user.id != self.user_id:
             await i.response.send_message("<a:wt_torono:1480580892706603018> You are not the CEO. Mind your own business.", ephemeral=True)
             return False
         return True
 
-    async def handle_choice(self, i: discord.Interaction, option_index: int):
+    async def handle_choice(self, i: "discord.Interaction", option_index: int):
         opt = self.crisis['opts'][option_index]
         cap_change = opt['capital']
         rep_change = opt['rep']
@@ -924,15 +924,15 @@ class BoardMeetingView(discord.ui.View):
         await i.response.edit_message(content=result_msg, embed=None, view=self)
 
     @discord.ui.button(label="Option 1", style=discord.ButtonStyle.primary, custom_id="bm_opt_1", emoji="<:sweetie_61blueflower:1504579938010009773>")
-    async def btn_opt1(self, i: discord.Interaction, btn: discord.ui.Button):
+    async def btn_opt1(self, i: "discord.Interaction", btn: discord.ui.Button):
         await self.handle_choice(i, 0)
 
     @discord.ui.button(label="Option 2", style=discord.ButtonStyle.primary, custom_id="bm_opt_2", emoji="<:sweetie_61purpleflower:1504579885111181414>")
-    async def btn_opt2(self, i: discord.Interaction, btn: discord.ui.Button):
+    async def btn_opt2(self, i: "discord.Interaction", btn: discord.ui.Button):
         await self.handle_choice(i, 1)
 
     @discord.ui.button(label="Option 3", style=discord.ButtonStyle.primary, custom_id="bm_opt_3", emoji="<:sweetie_61greenflower:1504579837543846098>")
-    async def btn_opt3(self, i: discord.Interaction, btn: discord.ui.Button):
+    async def btn_opt3(self, i: "discord.Interaction", btn: discord.ui.Button):
         await self.handle_choice(i, 2)
 
 class TerminalView(discord.ui.View):
@@ -951,7 +951,7 @@ class TerminalView(discord.ui.View):
             self.add_item(discord.ui.Button(label="RESOLVE STRIKE", style=discord.ButtonStyle.danger, custom_id="strike_btn", row=4))
     
     @discord.ui.button(label="Balance Sheet", style=discord.ButtonStyle.secondary, row=0, emoji="<:i_cupid:1426518951961038929>")
-    async def balance(self, i: discord.Interaction, btn):
+    async def balance(self, i: "discord.Interaction", btn):
         with get_db_cursor() as c:
             c.execute("SELECT capital, loan_balance, last_report FROM businesses WHERE user_id = ?", (i.user.id,))
             biz = c.fetchone()
@@ -970,7 +970,7 @@ class TerminalView(discord.ui.View):
     
     # Add this to the TerminalView class
 @discord.ui.button(label= "Select Country ", style=discord.ButtonStyle.secondary, row=3, emoji= " <a:wt_toroleaf:1480580940785913967 > ")
-async def country_btn(self, i: discord.Interaction, btn):
+async def country_btn(self, i: "discord.Interaction", btn):
     """Button to select country"""
     options = [
         discord.SelectOption(label="USA", description="United States of America", value="USA"),
@@ -986,7 +986,7 @@ async def country_btn(self, i: discord.Interaction, btn):
         def __init__(self):
             super().__init__(placeholder="Select your business country", options=options)
         
-        async def callback(self, interaction: discord.Interaction):
+        async def callback(self, interaction: "discord.Interaction"):
             country = self.values[0]
             
             with get_db_cursor() as c:
@@ -1003,12 +1003,12 @@ async def country_btn(self, i: discord.Interaction, btn):
 
 
     @discord.ui.button(label="Operations", style=discord.ButtonStyle.secondary, row=0, emoji="<a:i_devils:1426518576784736287>")
-    async def ops(self, i: discord.Interaction, btn):
+    async def ops(self, i: "discord.Interaction", btn):
         embed = discord.Embed(title="꒰ა ﹒chérie  ⸝⸝", color=0xffffff, description="**Operational Control**")
         await i.response.send_message(embed=embed, view=OpsView(i.user.id), ephemeral=False)
     
     @discord.ui.button(label="HR", style=discord.ButtonStyle.secondary, row=0, emoji="<:i_ghouls:1426522093620826112>")
-    async def hr(self, i: discord.Interaction, btn):
+    async def hr(self, i: "discord.Interaction", btn):
         with get_db_cursor() as c:
             c.execute("SELECT name, salary, morale, specialization FROM employees WHERE user_id = ?", (i.user.id,))
             emps = c.fetchall()
@@ -1025,7 +1025,7 @@ async def country_btn(self, i: discord.Interaction, btn):
 
     
     @discord.ui.button(label="R&D Hub", style=discord.ButtonStyle.secondary, row=1, emoji="<:i_incubus:1426520255462903869>")
-    async def rnd(self, i: discord.Interaction, btn):
+    async def rnd(self, i: "discord.Interaction", btn):
         with get_db_cursor() as c:
             c.execute("SELECT tech_level FROM businesses WHERE user_id = ?", (i.user.id,))
             tech = c.fetchone()[0]
@@ -1039,11 +1039,11 @@ async def country_btn(self, i: discord.Interaction, btn):
         await i.response.send_message(embed=embed, view=view, ephemeral=False)
     
     @discord.ui.button(label="Rename", style=discord.ButtonStyle.secondary, row=1, emoji="<a:i_pm:1426519079673659493>")
-    async def rename(self, i: discord.Interaction, btn):
+    async def rename(self, i: "discord.Interaction", btn):
         await i.response.send_modal(RenameCompanyModal())
     
     @discord.ui.button(label="IPO", style=discord.ButtonStyle.secondary, row=1, emoji="<:w_moth2:1380799242515386368>")
-    async def ipo(self, i: discord.Interaction, btn):
+    async def ipo(self, i: "discord.Interaction", btn):
         with get_db_cursor() as c:
             c.execute("SELECT name, capital, is_public FROM businesses WHERE user_id = ?", (i.user.id,))
             biz = c.fetchone()
@@ -1070,7 +1070,7 @@ async def country_btn(self, i: discord.Interaction, btn):
         await i.response.send_message(f"<a:wt_torojumping:1480580859042992209> **IPO SUCCESSFUL!**\nYour company is now trading as **{sym}** at A$ {start_price:,}.\n\nInstitutional underwriters have injected **A$ {ipo_bonus:,}** into your corporate capital! Don't forget your day ones when you get rich.", ephemeral=False)
     
     @discord.ui.button(label="Issue Shares (Dilute)", style=discord.ButtonStyle.secondary, row=1, emoji="<a:w_tear:1375482116749529098>")
-    async def dilute_btn(self, i: discord.Interaction, btn):
+    async def dilute_btn(self, i: "discord.Interaction", btn):
         with get_db_cursor() as c:
             c.execute("SELECT is_public FROM businesses WHERE user_id = ?", (i.user.id,))
             is_pub = c.fetchone()
@@ -1079,23 +1079,23 @@ async def country_btn(self, i: discord.Interaction, btn):
         await i.response.send_modal(DiluteSharesModal())
     
     @discord.ui.button(label="Marketing", style=discord.ButtonStyle.secondary, row=2, emoji="<:i_satan:1426518223133737000>")
-    async def market(self, i: discord.Interaction, btn):
+    async def market(self, i: "discord.Interaction", btn):
         await i.response.send_modal(MarketingModal())
     
     @discord.ui.button(label="Pay Dividends", style=discord.ButtonStyle.secondary, row=2, emoji="<:i_succubus:1426518422975549500>")
-    async def dividend(self, i: discord.Interaction, btn):
+    async def dividend(self, i: "discord.Interaction", btn):
         await i.response.send_modal(DividendModal())
     
     @discord.ui.button(label="Invest in R&D", style=discord.ButtonStyle.secondary, row=2, emoji="<:i_trialmod:1426518688911069184>")
-    async def invest_rnd(self, i: discord.Interaction, btn):
+    async def invest_rnd(self, i: "discord.Interaction", btn):
         await i.response.send_modal(RndInvestModal())
     
     @discord.ui.button(label="Espionage", style=discord.ButtonStyle.secondary, row=3, emoji="<:i_lucifer:1426518321544564798>")
-    async def espionage(self, i: discord.Interaction, btn):
+    async def espionage(self, i: "discord.Interaction", btn):
         await i.response.send_modal(EspionageModal())
 
     @discord.ui.button(label= "Audit ", style=discord.ButtonStyle.secondary, row=3, emoji= " <a:c_rolling:1218512150549499904 > ")
-    async def audit(self, i: discord.Interaction, btn):
+    async def audit(self, i: "discord.Interaction", btn):
         with get_db_cursor() as c:
             c.execute( "SELECT capital, owner_salary, days_open, last_report, sector, strike_active, last_audit, country FROM businesses WHERE user_id = ? ", (self.user_id,))
         biz = c.fetchone()
@@ -1245,7 +1245,7 @@ async def country_btn(self, i: discord.Interaction, btn):
         
         await i.response.send_message(embed=embed, ephemeral=True)
         
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+    async def interaction_check(self, interaction: "discord.Interaction") -> bool:
         if interaction.user.id != self.user_id:
             await interaction.response.send_message("<a:wt_torono:1480580892706603018> Access Denied. This is classified corporate data.", ephemeral=True)
             return False
@@ -1265,7 +1265,7 @@ class EspionageTypeDropdown(discord.ui.Select):
         ]
         super().__init__(placeholder="Select operation type...", options=opts)
     
-    async def callback(self, i: discord.Interaction):
+    async def callback(self, i: "discord.Interaction"):
         op = self.values[0]
         cost = 50000 if op == 'steal_tech' else 30000
         
@@ -1302,7 +1302,7 @@ class EspionageView(discord.ui.View):
         self.attacker_id = attacker_id
         self.add_item(EspionageTypeDropdown(target_id))
 
-    async def interaction_check(self, i: discord.Interaction) -> bool:
+    async def interaction_check(self, i: "discord.Interaction") -> bool:
         if i.user.id != self.attacker_id:
             await i.response.send_message("<a:wt_torono:1480580892706603018> This is a private black-ops channel.", ephemeral=True)
             return False
@@ -1311,7 +1311,7 @@ class EspionageView(discord.ui.View):
 class EspionageModal(discord.ui.Modal, title='Corporate Espionage'):
     target_id = discord.ui.TextInput(label='Target User ID', placeholder='e.g. 123456789')
     
-    async def on_submit(self, i: discord.Interaction):
+    async def on_submit(self, i: "discord.Interaction"):
         try:
             tid = int(self.target_id.value)
         except:
@@ -1412,7 +1412,7 @@ class Business(commands.Cog):
 
     # Add this to the Business class
 @app_commands.command(name="help", description="View the bot's command help")
-async def help_cmd(self, i: discord.Interaction):
+async def help_cmd(self, i: "discord.Interaction"):
     """Displays a modal with all commands"""
     # Create help embed
     embed = discord.Embed(title="Athena Business Command Help", color=0xffffff)
@@ -1455,7 +1455,7 @@ async def help_cmd(self, i: discord.Interaction):
 
 
     @app_commands.command(name="guidebiz", description="Read the official Athena Business Manual")
-    async def bizguide(self, i: discord.Interaction):
+    async def bizguide(self, i: "discord.Interaction"):
         pages = []
         
         # --- Page 1: Introduction ---
@@ -1525,7 +1525,7 @@ async def help_cmd(self, i: discord.Interaction):
 
     @app_commands.command(name="biz_repair_market", description="ADMIN: Global database sync to fix all legacy/corrupted base costs")
     @app_commands.default_permissions(administrator=True)
-    async def biz_repair_market(self, i: discord.Interaction):
+    async def biz_repair_market(self, i: "discord.Interaction"):
         await i.response.defer(ephemeral=True)
         
         updated_count = 0
@@ -1600,7 +1600,7 @@ async def lottery_cmd(self, ctx):
 
     @app_commands.command(name="biz_setcapital", description="ADMIN: Forcefully set a business's capital")
     @app_commands.default_permissions(administrator=True)
-    async def biz_setcapital(self, i: discord.Interaction, user: discord.Member, amount: int):
+    async def biz_setcapital(self, i: "discord.Interaction", user: discord.Member, amount: int):
         with get_db_cursor() as c:
             # Check if they actually have a business
             c.execute("SELECT name FROM businesses WHERE user_id = ?", (user.id,))
@@ -1630,7 +1630,7 @@ async def lottery_cmd(self, ctx):
 
     @app_commands.command(name="biz_credit_legacy_ipos", description="ADMIN: Grant the retroactive 20% IPO underwriting capital bonus to existing public companies")
     @app_commands.default_permissions(administrator=True)
-    async def biz_credit_legacy_ipos(self, i: discord.Interaction):
+    async def biz_credit_legacy_ipos(self, i: "discord.Interaction"):
         await i.response.defer(ephemeral=True)
         
         credited_companies = []
@@ -1663,7 +1663,7 @@ async def lottery_cmd(self, ctx):
         app_commands.Choice(name="BMW 760i xDrive", value="BMW 760i xDrive"),
         app_commands.Choice(name="Audi RS6 Avant", value="Audi RS6 Avant")
     ])
-    async def biz_awardcar(self, i: discord.Interaction, user: discord.Member, car: app_commands.Choice[str]):
+    async def biz_awardcar(self, i: "discord.Interaction", user: discord.Member, car: app_commands.Choice[str]):
         # 1. Verify they actually own a business
         with get_db_cursor() as c:
             c.execute("SELECT name FROM businesses WHERE user_id = ?", (user.id,))
@@ -2029,7 +2029,7 @@ async def lottery_cmd(self, ctx):
     # 🎮 COMMANDS
     # ==========================================
     @app_commands.command(name="business")
-    async def business_hub(self, i: discord.Interaction):
+    async def business_hub(self, i: "discord.Interaction"):
         with get_db_cursor() as c:
             c.execute("SELECT name, capital, reputation, description, hq_level, sector, is_public, tech_level, marketing_budget FROM businesses WHERE user_id = ?", (i.user.id,))
             biz = c.fetchone()
@@ -2079,7 +2079,7 @@ async def lottery_cmd(self, ctx):
         await i.edit_original_response(content=None, embed=embed, view=TerminalView(self.bot, i.user.id))
 
     @app_commands.command(name="appoint")
-    async def appoint_vp(self, i: discord.Interaction, user: discord.Member):
+    async def appoint_vp(self, i: "discord.Interaction", user: discord.Member):
         if user.bot or user.id == i.user.id: return await i.response.send_message("<a:wt_torono:1480580892706603018> Invalid user.", ephemeral=True)
         with get_db_cursor() as c:
             if not c.execute("SELECT 1 FROM businesses WHERE user_id = ?", (i.user.id,)).fetchone():
@@ -2088,7 +2088,7 @@ async def lottery_cmd(self, ctx):
         await i.response.send_message(f"Select title for {user.name}:", view=v, ephemeral=True)
 
     @app_commands.command(name="rename_company", description="Rename your company")
-    async def rename_cmd(self, i: discord.Interaction):
+    async def rename_cmd(self, i: "discord.Interaction"):
         with get_db_cursor() as c:
             if not c.execute("SELECT 1 FROM businesses WHERE user_id = ?", (i.user.id,)).fetchone():
                 return await i.response.send_message("<a:wt_torono:1480580892706603018> No business found.", ephemeral=True)
@@ -2096,13 +2096,13 @@ async def lottery_cmd(self, ctx):
 
     @app_commands.command(name="set_banner", description="ADMIN: Set the newspaper embed banner image")
     @app_commands.default_permissions(administrator=True)
-    async def set_banner(self, i: discord.Interaction, url: str):
+    async def set_banner(self, i: "discord.Interaction", url: str):
         with get_db_cursor() as c:
             c.execute("INSERT OR REPLACE INTO config (key, value) VALUES ('newspaper_banner', ?)", (url,))
         await i.response.send_message("<a:wt_toroexclaim:1480581004317036624> Newspaper banner updated!")
 
     @app_commands.command(name="bizleaderboard", description="Top companies by capital")
-    async def leaderboard(self, i: discord.Interaction):
+    async def leaderboard(self, i: "discord.Interaction"):
         await i.response.defer()
         with get_db_cursor() as c:
             c.execute("SELECT name, capital, reputation, sector, user_id FROM businesses ORDER BY capital DESC LIMIT 10")
@@ -2134,4 +2134,5 @@ async def lottery_cmd(self, ctx):
 
 async def setup(bot):
     await bot.add_cog(Business(bot))
+
 
