@@ -15,6 +15,7 @@ from contextlib import contextmanager
 BUSINESS_CHANNEL_ID = 1218599931837681734
 DB_PATH = "business.db"
 ECO_DB = "economy.db"
+LOTTERY_COOLDOWN = 28800
 
 HQ_LEVELS = {
     0: {"name": "Mother's Garage", "max_emp": 5, "cost": 0},
@@ -63,6 +64,78 @@ SECTOR_BASE_COSTS = {
     "Industrial": 1200,
     "Energy": 1200
 }
+
+# Add this near the top of the file with other constants
+COUNTRY_TAX_RATES = {
+    "USA": {
+        "brackets": [
+            (100000, 0.0),
+            (500000, 0.05),
+            (2000000, 0.15),
+            (float('inf'), 0.30)
+        ]
+    },
+    "UK": {
+        "brackets": [
+            (100000, 0.0),
+            (500000, 0.07),
+            (2000000, 0.18),
+            (float('inf'), 0.35)
+        ]
+    },
+    "Germany": {
+        "brackets": [
+            (100000, 0.0),
+            (500000, 0.06),
+            (2000000, 0.16),
+            (float('inf'), 0.32)
+        ]
+    },
+    "France": {
+        "brackets": [
+            (100000, 0.0),
+            (500000, 0.08),
+            (2000000, 0.19),
+            (float('inf'), 0.37)
+        ]
+    },
+    "Brazil": {
+        "brackets": [
+            (100000, 0.0),
+            (500000, 0.09),
+            (2000000, 0.20),
+            (float('inf'), 0.40)
+        ]
+    },
+    "China": {
+        "brackets": [
+            (100000, 0.0),
+            (500000, 0.04),
+            (2000000, 0.14),
+            (float('inf'), 0.28)
+        ]
+    },
+    "Vietnam": {
+        "brackets": [
+            (100000, 0.0),
+            (500000, 0.03),
+            (2000000, 0.12),
+            (float('inf'), 0.15)
+        ]
+    }
+}
+
+# --- NEW: PROGRESSIVE TAX BRACKETS (For Central Reserve) ---
+def calculate_progressive_tax(net_profit: int) -> int:
+    """Calculates progressive tax. Startups under 100k are untouched."""
+    if net_profit <= 100_000:
+        return 0
+    elif net_profit <= 500_000:
+        return int(net_profit * 0.05) # 5% tax on mid-tier
+    elif net_profit <= 2_000_000:
+        return int(net_profit * 0.15) # 15% tax on high-tier
+    else:
+        return int(net_profit * 0.30) # 30% tax on mega-conglomerates
 
 # ==========================================
 # 🗄️ SAFE DATABASE CONTEXT MANAGERS
@@ -894,6 +967,40 @@ class TerminalView(discord.ui.View):
         embed = discord.Embed(title="꒰ა chérie  ⸝⸝", color=0xffffff, description=receipt)
         await i.response.send_message(embed=embed, ephemeral=True)
     
+    # Add this to the TerminalView class
+@discord.ui.button(label= "Select Country ", style=discord.ButtonStyle.secondary, row=3, emoji= " <a:wt_toroleaf:1480580940785913967 > ")
+async def country_btn(self, i: discord.Interaction, btn):
+    """Button to select country"""
+    options = [
+        discord.SelectOption(label="USA", description="United States of America", value="USA"),
+        discord.SelectOption(label="UK", description="United Kingdom", value="UK"),
+        discord.SelectOption(label="Germany", description="Federal Republic of Germany", value="Germany"),
+        discord.SelectOption(label="France", description="French Republic", value="France"),
+        discord.SelectOption(label="Brazil", description="Federative Republic of Brazil", value="Brazil"),
+        discord.SelectOption(label="China", description="People's Republic of China", value="China"),
+        discord.SelectOption(label="Vietnam", description="Socialist Republic of Vietnam", value="Vietnam")
+    ]
+    
+    class CountryDropdown(discord.ui.Select):
+        def __init__(self):
+            super().__init__(placeholder="Select your business country", options=options)
+        
+        async def callback(self, interaction: discord.Interaction):
+            country = self.values[0]
+            
+            with get_db_cursor() as c:
+                c.execute("UPDATE businesses SET country = ? WHERE user_id = ?", (country, interaction.user.id))
+            
+            # Update the terminal view to reflect the new country
+            embed = discord.Embed(title="ა Country Updated", color=0xffffff)
+            embed.description = f"Your business is now registered in {country}.\nTax rates will be applied based on this country's regulations."
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    view = discord.ui.View()
+    view.add_item(CountryDropdown())
+    await i.response.send_message("Select your business country:", view=view, ephemeral=True)
+
+
     @discord.ui.button(label="Operations", style=discord.ButtonStyle.secondary, row=0, emoji="<a:i_devils:1426518576784736287>")
     async def ops(self, i: discord.Interaction, btn):
         embed = discord.Embed(title="꒰ა ﹒chérie  ⸝⸝", color=0xffffff, description="**Operational Control**")
@@ -913,6 +1020,8 @@ class TerminalView(discord.ui.View):
             if len(emps) > 15: desc += f"*...and {len(emps)-15} more.*\n"
             embed.description = desc
         await i.response.send_message(embed=embed, view=HRView(i.user.id), ephemeral=False)
+    
+
     
     @discord.ui.button(label="R&D Hub", style=discord.ButtonStyle.secondary, row=1, emoji="<:i_incubus:1426520255462903869>")
     async def rnd(self, i: discord.Interaction, btn):
@@ -984,79 +1093,156 @@ class TerminalView(discord.ui.View):
     async def espionage(self, i: discord.Interaction, btn):
         await i.response.send_modal(EspionageModal())
 
-    @discord.ui.button(label="Audit", style=discord.ButtonStyle.secondary, row=3, emoji="<a:c_rolling:1218512150549499904>")
+    @discord.ui.button(label= "Audit ", style=discord.ButtonStyle.secondary, row=3, emoji= " <a:c_rolling:1218512150549499904 > ")
     async def audit(self, i: discord.Interaction, btn):
         with get_db_cursor() as c:
-            c.execute("SELECT capital, owner_salary, days_open, last_report, sector, strike_active, last_audit FROM businesses WHERE user_id = ?", (self.user_id,))
-            biz = c.fetchone()
+            c.execute( "SELECT capital, owner_salary, days_open, last_report, sector, strike_active, last_audit, country FROM businesses WHERE user_id = ? ", (self.user_id,))
+        biz = c.fetchone()
+        
+        # --- 4 HOUR COOLDOWN CHECK ---
+        now = time.time()
+        if biz[6] and (now - biz[6])  < 14400: # 4 hours = 14400 seconds
+            rem = int(14400 - (now - biz[6]))
+            return await i.response.send_message(f"⏱️ Your corporate consultants are currently analyzing data. Come back in **{rem // 3600}h {(rem % 3600)//60}m**. ", ephemeral=True)
             
-            # --- 4 HOUR COOLDOWN CHECK ---
-            now = time.time()
-            if biz[6] and (now - biz[6]) < 14400: # 4 hours = 14400 seconds
-                rem = int(14400 - (now - biz[6]))
-                return await i.response.send_message(f"⏱️ Your corporate consultants are currently analyzing data. Come back in **{rem // 3600}h {(rem % 3600)//60}m**.", ephemeral=True)
-                
-            c.execute("UPDATE businesses SET last_audit = ? WHERE user_id = ?", (now, self.user_id))
-            
-            # Fetch employees
-            c.execute("SELECT COUNT(id), SUM(salary), AVG(morale) FROM employees WHERE user_id = ?", (self.user_id,))
-            emps = c.fetchone()
-            emp_count = emps[0] or 0
-            avg_morale = emps[2] or 100
-            
-            # Fetch products
-            c.execute("SELECT name, unit_price, cost_to_make, production_target, quality_tier FROM business_products WHERE user_id = ? AND active = 1", (self.user_id,))
-            prods = c.fetchall()
-            
-            # --- CONDUCT ANALYSIS ---
-            advice = []
-            
-            if biz[5] == 1 or avg_morale < 25:
-                advice.append("🚨 **CRITICAL: Worker Strike Imminent/Active.** Morale is critically low. Use the HR terminal to host an event immediately or settle the strike, otherwise production is frozen.")
-            elif avg_morale < 50:
-                advice.append("⚠️ **Warning: Low Morale.** Workers are unhappy. A strike will occur if it drops below 20%. Invest in HR events.")
-            
-            if not prods:
-                advice.append("📦 **No Products:** You aren't producing anything. Launch a product in the Operations terminal to generate revenue.")
+        c.execute( "UPDATE businesses SET last_audit = ? WHERE user_id = ? ", (now, self.user_id))
+        
+        # Fetch employees
+        c.execute( "SELECT COUNT(id), SUM(salary), AVG(morale) FROM employees WHERE user_id = ? ", (self.user_id,))
+        emps = c.fetchone()
+        emp_count = emps[0] or 0
+        avg_morale = emps[2] or 100
+        
+        # Fetch products
+        c.execute( "SELECT name, unit_price, cost_to_make, production_target, quality_tier FROM business_products WHERE user_id = ? AND active = 1 ", (self.user_id,))
+        prods = c.fetchall()
+        
+        # --- CONDUCT ANALYSIS ---
+        advice = []
+        
+        # 1. Check for strike conditions
+        if biz[5] == 1 or avg_morale  < 25:
+            if avg_morale  < 20:
+                advice.append( "🚨 **CRITICAL: Worker Strike Active!** Morale is critically low (below 20%). Production is halted. Use the HR terminal to host an event immediately or settle the strike, otherwise your business will continue to bleed capital. ")
             else:
-                total_target = sum(p[3] for p in prods)
-                
-                # Estimate Factory Capacity based on staff and tech
-                tech_level = 0
-                c.execute("SELECT tech_level FROM businesses WHERE user_id = ?", (self.user_id,))
-                tech_res = c.fetchone()
-                if tech_res: tech_level = tech_res[0]
-                
-                eng_mult = 1.0 + (tech_level * 0.02)
-                factory_cap = int((emp_count * 50) * eng_mult) 
-                
-                if total_target > (factory_cap * 1.5):
-                    advice.append(f"⚠️ **Overproduction:** Your Daily Targets (approx {total_target:,}) vastly exceed your factory's capacity (approx {factory_cap:,}). You are paying baseline costs for units you physically cannot build. Lower your targets or hire more staff.")
-                elif factory_cap > (total_target * 2):
-                    advice.append(f"⚠️ **Overstaffed:** You have {emp_count} employees but low production targets. You are wasting capital on payroll for idle workers. Fire staff or increase production targets.")
-                
-                # Pricing checks
-                for p in prods:
-                    tier_data = QUALITY_TIERS.get(p[4], QUALITY_TIERS['Standard'])
-                    adj_cost = p[2] * tier_data['cost_mult']
-                    margin = p[1] / max(1, adj_cost)
-                    
-                    if margin > 4.0:
-                        advice.append(f"🟥 **SEVERE OVERPRICING:** Your product **{p[0]}** is marked up by over 400%. You are losing 95% of your sales volume to buyer boycotts. Edit the price down immediately.")
-                    elif margin > 2.5:
-                        advice.append(f"🟧 **High Price:** Your product **{p[0]}** is marked up over 2.5x. You are losing 70% of potential sales. Consider lowering to the 'Sweet Spot' (2.5x base cost).")
+                advice.append( "⚠️ **Warning: Low Morale.** Workers are unhappy (below 25%). A strike will occur if it drops below 20%. Invest in HR events to boost morale. ")
+        
+        # 2. Check for products
+        if not prods:
+            advice.append( "📦 **No Products:** You aren't producing anything. Launch a product in the Operations terminal to generate revenue. ")
+        else:
+            total_target = sum(p[3] for p in prods)
             
-            if biz[0] < 50000:
-                advice.append("📉 **Low Capital:** Your liquid capital is dangerously low. Consider injecting personal funds to stay afloat.")
-                
-            if not advice:
-                advice.append("🟩 **Optimal Operations:** Your pricing, staffing, and morale look perfectly balanced! Keep up the good work, CEO.")
-                
-            embed = discord.Embed(title="꒰ა Firm Analysis & Audit ⸝⸝", color=0xffffff)
-            embed.description = "The corporate consultants have reviewed your operations:\n\n" + "\n\n".join(advice)
-            embed.set_footer(text="Next audit available in 4 hours.")
+            # Estimate Factory Capacity based on staff and tech
+            tech_level = 0
+            c.execute( "SELECT tech_level FROM businesses WHERE user_id = ? ", (self.user_id,))
+            tech_res = c.fetchone()
+            if tech_res: tech_level = tech_res[0]
             
-            await i.response.send_message(embed=embed, ephemeral=True)
+            eng_mult = 1.0 + (tech_level * 0.02)
+            factory_cap = int((emp_count * 50) * eng_mult) 
+            
+            # 2a. Check for overproduction
+            if total_target  > (factory_cap * 1.5):
+                advice.append(f"⚠️ **Overproduction:** Your Daily Targets (approx {total_target:,}) vastly exceed your factory's capacity (approx {factory_cap:,}). You are paying baseline costs for units you physically cannot build. Lower your targets or hire more staff. ")
+            # 2b. Check for understaffing
+            elif factory_cap  > (total_target * 2):
+                advice.append(f"⚠️ **Understaffed:** You have {emp_count} employees but low production targets. You are wasting capital on payroll for idle workers. Fire staff or increase production targets. ")
+            
+            # 3. Check pricing
+            for p in prods:
+                tier_data = QUALITY_TIERS.get(p[4], QUALITY_TIERS['Standard'])
+                adj_cost = p[2] * tier_data['cost_mult']
+                margin = p[1] / max(1, adj_cost)
+                
+                # 3a. Check for severe overpricing
+                if margin  > 4.0:
+                    advice.append(f"🟥 **SEVERE OVERPRICING:** Your product **{p[0]}** is marked up by over 400%. You are losing 95% of your sales volume to buyer boycotts. Edit the price down immediately. ")
+                # 3b. Check for high pricing
+                elif margin  > 2.5:
+                    advice.append(f"🟧 **High Price:** Your product **{p[0]}** is marked up over 2.5x. You are losing 70% of potential sales. Consider lowering to the 'Sweet Spot' (2.5x base cost). ")
+                # 3c. Check for optimal pricing
+                elif margin  > 1.5:
+                    advice.append(f"🟨 **Good Pricing:** Your product **{p[0]}** is priced well. Consider increasing production to maximize revenue. ")
+                # 3d. Check for underpricing
+                else:
+                    advice.append(f"🟩 **Underpricing:** Your product **{p[0]}** is priced too low. You're missing out on potential profit. Consider increasing the price slightly. ")
+        
+        # 4. Check for low capital
+        if biz[0]  < 50000:
+            advice.append( "📉 **Critical Capital Shortage:** Your liquid capital is dangerously low (below A$ 50,000). Consider injecting personal funds to stay afloat. ")
+        elif biz[0]  < 100000:
+            advice.append( "⚠️ **Low Capital:** Your liquid capital is low (below A$ 100,000). Consider injecting personal funds to maintain operations. ")
+        
+        # 5. Check for high debt
+        if biz[1]  > 0:
+            debt_ratio = biz[1] / biz[0]
+            if debt_ratio  > 0.5:
+                advice.append( "⚠️ **High Debt Ratio:** Your debt is more than 50% of your capital. Consider paying down debt to improve your financial stability. ")
+            elif debt_ratio  > 0.25:
+                advice.append( "⚠️ **Moderate Debt:** Your debt is more than 25% of your capital. Monitor your debt levels closely. ")
+        
+        # 6. Check for high tax burden
+        tax_rate = 0.0
+        country = biz[7] or 'USA'
+        brackets = COUNTRY_TAX_RATES.get(country, COUNTRY_TAX_RATES['USA'])['brackets']
+        for threshold, rate in brackets:
+            if biz[0] > threshold:
+                tax_rate = rate
+            else:
+                break
+        if tax_rate  > 0.15:
+            advice.append(f"⚠️ **High Tax Burden:** Your country's tax rate is {tax_rate*100:.1f}%. Consider expanding into countries with lower tax rates or optimizing your business structure to reduce your tax burden. ")
+        
+        # 7. Check for underutilized R&D
+        if tech_level  < 10:
+            advice.append( "⚠️ **Underutilized R&D:** Your tech level is low ({tech_level}). Invest in R&D to unlock higher production efficiency and premium products. ")
+        
+        # 8. Check for marketing opportunities
+        if biz[8]  < 5000:
+            advice.append( "💡 **Marketing Opportunity:** Your marketing budget is low (A$ {biz[8]:,}). Consider investing in marketing to boost demand for your products. ")
+        
+        # 9. Check for negative profit
+        if biz[0]  < 0:
+            advice.append( "🟥 **Negative Profit:** Your business is operating at a loss. Reassess your pricing, costs, and production targets immediately. ")
+        
+        # 10. Check for low reputation
+        if biz[2]  < 50:
+            advice.append( "⚠️ **Low Reputation:** Your brand reputation is low ({biz[2]}%). Consider investing in quality improvements and customer service to boost your reputation. ")
+        
+        # 11. Check for high employee turnover
+        if emp_count  > 0 and avg_morale  < 70:
+            advice.append( "⚠️ **High Employee Turnover Risk:** Employee morale is low ({avg_morale}%). Consider hosting HR events to improve morale and reduce turnover. ")
+        
+        # 12. Check for underutilized tech
+        if tech_level  > 10 and not any(p[4] == 'Premium' or p[4] == 'Luxury' for p in prods):
+            advice.append( "💡 **Underutilized Tech:** You have high tech level ({tech_level}) but aren't producing premium or luxury products. Consider upgrading your products to unlock higher margins. ")
+        
+        # 13. Check for country-specific recommendations
+        if country == 'China':
+            advice.append( "💡 **China Specific Opportunity:** Consider leveraging China's manufacturing advantages for cost-efficient production. However, be aware of potential trade restrictions. ")
+        elif country == 'USA':
+            advice.append( "💡 **USA Specific Opportunity:** Leverage the strong US market for premium products. Consider expanding into other Western markets for growth. ")
+        elif country == 'Germany':
+            advice.append( "💡 **Germany Specific Opportunity:** Germany is known for high-quality manufacturing. Consider positioning your brand as premium to leverage this reputation. ")
+        elif country == 'Vietnam':
+            advice.append( "💡 **Vietnam Specific Opportunity:** Vietnam offers low labor costs. Consider outsourcing production to Vietnam to reduce costs. ")
+        elif country == 'UK':
+            advice.append( "💡 **UK Specific Opportunity:** The UK has strong intellectual property protections. Consider registering patents here for your innovations. ")
+        elif country == 'France':
+            advice.append( "💡 **France Specific Opportunity:** France has strong luxury brand recognition. Consider positioning your products as premium luxury goods. ")
+        elif country == 'Brazil':
+            advice.append( "💡 **Brazil Specific Opportunity:** Brazil has a large domestic market. Consider focusing on local market penetration before expanding globally. ")
+        
+        # 14. Final recommendation
+        if not advice:
+            advice.append( "🟩 **Optimal Operations:** Your pricing, staffing, and morale look perfectly balanced! Keep up the good work, CEO. ")
+            
+        embed = discord.Embed(title= "ა Firm Analysis  & Audit ⸝⸝ ", color=0xffffff)
+        embed.description =  "The corporate consultants have reviewed your operations:\n\n " +  "\n\n ".join(advice)
+        embed.set_footer(text= "Next audit available in 4 hours. ")
+        
+        await i.response.send_message(embed=embed, ephemeral=True)
         
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.user_id:
@@ -1145,6 +1331,8 @@ class Business(commands.Cog):
         self.setup_db()
         self.daily_cycle.start()
         self.ticker_feed.start()
+        self.lottery_cycle.start()  # Add this line
+        self.pick_reminder.start()
 
     def setup_db(self):
         with get_db_cursor() as c:
@@ -1159,6 +1347,13 @@ class Business(commands.Cog):
                 sector TEXT, tech_level INTEGER DEFAULT 0, marketing_budget INTEGER DEFAULT 0,
                 quarter INTEGER DEFAULT 1, next_board_meeting REAL DEFAULT 0, strike_active INTEGER DEFAULT 0,
                 last_audit REAL DEFAULT 0
+            )''')
+
+            c.execute('''CREATE TABLE IF NOT EXISTS lottery (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                entry_time REAL,
+                country TEXT
             )''')
             
             
@@ -1185,14 +1380,23 @@ class Business(commands.Cog):
                 user_id INTEGER, quarter INTEGER, revenue_modifier REAL DEFAULT 1.0,
                 PRIMARY KEY(user_id, quarter)
             )''')
-            for table, col, dtype in [
-                ("businesses", "sector", "TEXT"), ("businesses", "last_audit", "REAL DEFAULT 0"), ("businesses", "tech_level", "INTEGER DEFAULT 0"),
-                ("businesses", "marketing_budget", "INTEGER DEFAULT 0"), ("businesses", "quarter", "INTEGER DEFAULT 1"),
-                ("businesses", "next_board_meeting", "REAL DEFAULT 0"), ("businesses", "strike_active", "INTEGER DEFAULT 0"),
-                ("business_products", "category", "TEXT"), ("business_products", "quality_tier", "TEXT DEFAULT 'Standard'")
-            ]:
-                try: c.execute(f"ALTER TABLE {table} ADD COLUMN {col} {dtype}")
-                except: pass
+                    # Change this:
+        # for table, col, dtyp e in [
+        
+        # TO THIS:
+        for table, col, dtype in [
+            ("businesses", "sector", "TEXT"), 
+            ("businesses", "last_audit", "REAL DEFAULT 0"), 
+            ("businesses", "tech_level", "INTEGER DEFAULT 0"),
+            ("businesses", "marketing_budget", "INTEGER DEFAULT 0"), 
+            ("businesses", "quarter", "INTEGER DEFAULT 1"),
+            ("businesses", "next_board_meeting", "REAL DEFAULT 0"), 
+            ("businesses", "strike_active", "INTEGER DEFAULT 0"),
+            ("business_products", "category", "TEXT"), 
+            ("business_products", "quality_tier", "TEXT DEFAULT 'Standard'")
+        ]:
+            try: c.execute(f"ALTER TABLE {table} ADD COLUMN {col} {dtype}")
+            except: pass
 
     async def _post_to_channel(self, embed: discord.Embed, view: discord.ui.View = None):
         channel = self.bot.get_channel(BUSINESS_CHANNEL_ID)
@@ -1203,6 +1407,51 @@ class Business(commands.Cog):
                 else:
                     await channel.send(embed=embed)
             except: pass
+
+
+    # Add this to the Business class
+@app_commands.command(name="help", description="View the bot's command help")
+async def help_cmd(self, i: discord.Interaction):
+    """Displays a modal with all commands"""
+    # Create help embed
+    embed = discord.Embed(title="Athena Business Command Help", color=0xffffff)
+    embed.description = "Here's a list of all available commands:"
+    
+    # Add commands to embed
+    commands = [
+        ("business", "Access your business terminal"),
+        ("appoint", "Appoint a VP"),
+        ("rename_company", "Rename your company"),
+        ("set_banner", "Set the newspaper banner"),
+        ("bizleaderboard", "View the top companies"),
+        ("lottery", "Enter the daily lottery"),
+        ("pick", "Pick a random item for a reward"),
+        ("audit", "Run a business audit"),
+        ("market", "View stock market prices"),
+        ("buy", "Buy stocks"),
+        ("sell", "Sell stocks"),
+        ("portfolio", "View your investment portfolio"),
+        ("heist", "Attempt a corporate heist"),
+        ("daily", "Claim your daily allowance"),
+        ("work", "Work at your job to earn money"),
+        ("stake", "Stake money for guaranteed returns"),
+        ("invest", "Invest in the stock market"),
+        ("convert", "Convert between Mimu and Athena coins"),
+        ("statement", "View your transaction history")
+    ]
+    
+    for name, desc in commands:
+        embed.add_field(name=f"/{name}", value=desc, inline=False)
+    
+    # Add footer
+    embed.set_footer(text="Use /business to start your business journey!")
+    
+    # Send as modal
+    view = discord.ui.View()
+    view.add_item(discord.ui.Button(label="Close", style=discord.ButtonStyle.danger, custom_id="close_help"))
+    
+    await i.response.send_message(embed=embed, view=view)
+
 
     @app_commands.command(name="guidebiz", description="Read the official Athena Business Manual")
     async def bizguide(self, i: discord.Interaction):
@@ -1289,6 +1538,64 @@ class Business(commands.Cog):
                 updated_count += c.rowcount
                 
         await i.followup.send(f"🔬 **Market Core Cleansed!** Successfully re-aligned **{updated_count}** corrupted product base costs across all server conglomerates to match official Central Reserve guidelines.")
+
+@tasks.loop(hours=8)
+async def lottery_cycle(self):
+    """Runs every 8 hours to draw lottery winners"""
+    with get_db_cursor() as c:
+        # Get all lottery entries
+        c.execute("SELECT user_id, country FROM lottery")
+        entries = c.fetchall()
+        
+        if not entries:
+            return
+            
+        # Select a winner
+        winner = random.choice(entries)
+        user_id, country = winner
+        
+        # Calculate prize (5k-11k)
+        prize = random.randint(5000, 11000)
+        
+        # Remove all entries
+        c.execute("DELETE FROM lottery")
+        
+        # Pay winner
+        with get_eco_cursor() as c_eco:
+            atomic_eco_balance_update(c_eco, user_id, prize)
+        
+        # Notify winner
+        user = self.bot.get_user(user_id)
+        if user:
+            await user.send(f"🎉 **Lottery Winner!** You've won A$ {prize:,} in the Athena Central Reserve lottery!")
+        
+        # Announce winner in business channel
+        channel = self.bot.get_channel(BUSINESS_CHANNEL_ID)
+        if channel:
+            embed = discord.Embed(title="Lottery Winner!", color=0xffffff)
+            embed.description = f"Congratulations {user.mention}! You've won A$ {prize:,} in the Athena Central Reserve lottery!"
+            await channel.send(embed=embed)
+
+
+@commands.command(name="lottery")
+async def lottery_cmd(self, ctx):
+    """Enters the user into the lottery (button-based entry)"""
+    # Check if user is already in lottery
+    with get_db_cursor() as c:
+        c.execute("SELECT 1 FROM lottery WHERE user_id = ?", (ctx.author.id,))
+        if c.fetchone():
+            return await ctx.send("You're already entered in the lottery! Wait for the next draw.")
+        
+        # Get user's country
+        c.execute("SELECT country FROM businesses WHERE user_id = ?", (ctx.author.id,))
+        country = c.fetchone()
+        country = country[0] if country else "USA"
+        
+        # Add to lottery
+        c.execute("INSERT INTO lottery (user_id, entry_time, country) VALUES (?, ?, ?)", 
+                 (ctx.author.id, time.time(), country))
+        
+        await ctx.send(f"You've entered the lottery! Good luck! The next draw is in 8 hours.")
 
     @app_commands.command(name="biz_setcapital", description="ADMIN: Forcefully set a business's capital")
     @app_commands.default_permissions(administrator=True)
@@ -1411,6 +1718,7 @@ class Business(commands.Cog):
     # ==========================================
     # 📊 SIMULATION CYCLE (Quarters, Board Meetings, Market)
     # ==========================================
+
     def _simulate_company_cycle(self, c, c_eco, biz):
         uid = biz['user_id']
         c.execute("SELECT * FROM employees WHERE user_id = ?", (uid,))
@@ -1448,8 +1756,6 @@ class Business(commands.Cog):
             new_rep = max(0, biz['reputation'] - 3 + rep_boost)
 
         factory_cap = int(sum(50 * (e[4]/100) for e in emps) * out_mult)
-        
-        # --- FIX: PROPORTIONAL CAPACITY ALLOCATION ---
         total_targets = sum(max(1, p[8]) for p in prods)
         
         tot_rev = tot_cost = 0
@@ -1459,49 +1765,59 @@ class Business(commands.Cog):
             adj_price = int(price * tier_data['price_mult'])
             adj_cost = int(cost * tier_data['cost_mult'] * (1 - cost_red))
             
-            # Employees now split their labor fairly based on target quantities
-            
-            # Ensure each product gets at least 1 unit of capacity
-            min_allocation = 1
-            allocated_cap = max(min_allocation, int(factory_cap * (max(1, target) / total_targets)))
+            allocated_cap = max(1, int(factory_cap * (max(1, target) / total_targets)))
             made = min(target, allocated_cap)
             
             prod_dem = demand * tier_data['demand_elasticity']
-            
-            # Calculate how much they WOULD sell based on raw demand
             base_sold = min(made, int(made * prod_dem))
             
-            margin_ratio = adj_price / max(1, adj_cost)
+            margin_ratio = price / max(1, SECTOR_BASE_COSTS.get(sector, 300))
             
-            # --- THE LOOPHOLE KILLER v2 (Dynamic Scaling Boycott) ---
-            if margin_ratio > 8.0:
-                sold = 0                       # Total market boycott! Overpriced trash won't sell a single unit.
-            elif margin_ratio > 4.0: 
-                # Scales sales down dynamically from 5% to 0% as markup nears 8x
-                decay = max(0.0, 1.0 - (margin_ratio - 4.0) / 4.0)
-                sold = int(base_sold * 0.05 * decay)   
-            elif margin_ratio > 2.5: 
-                sold = int(base_sold * 0.30)   # 70% of stock rots on shelves
-            elif margin_ratio > 1.5: 
-                sold = int(base_sold * 0.80)   # 20% of stock rots on shelves
-            else:
-                sold = base_sold               # Fair price = keep all sales        # Fair price = keep all sales
+            if margin_ratio > 8.0: sold = 0
+            elif margin_ratio > 4.0: sold = int(base_sold * 0.05 * max(0.0, 1.0 - (margin_ratio - 4.0) / 4.0))
+            elif margin_ratio > 2.5: sold = int(base_sold * 0.30)
+            elif margin_ratio > 1.5: sold = int(base_sold * 0.80)
+            else: sold = base_sold
             
             revenue = sold * adj_price
             tot_rev += revenue
             tot_cost += made * (adj_cost * aud_mult)
-            
-            # --- UPDATE BOTH REVENUE AND LIFETIME SOLD ---
             c.execute("UPDATE business_products SET lifetime_revenue = lifetime_revenue + ?, lifetime_sold = lifetime_sold + ? WHERE id = ?", (revenue, sold, p_id))
 
         overhead = int((10000 + emp_count * 500) * aud_mult)
         loan_pay = biz['loan_balance'] // max(1, biz['installments_left']) if biz['installments_left'] > 0 else 0
-        if loan_pay:
-            c.execute("UPDATE businesses SET loan_balance = loan_balance - ?, installments_left = installments_left - 1 WHERE user_id = ?", (loan_pay, uid))
         exec_pay = biz['owner_salary'] * (2 if biz['vp_id'] else 1)
-        total_exp = total_payroll + overhead + tot_cost + loan_pay + exec_pay
-        net = int(tot_rev - total_exp)
-        new_cap = biz['capital'] + net
+        total_exp = total_payroll + overhead + tot_cost + loan_pay + exec_pay + (biz['marketing_budget'] * 2)
+        
+        net_profit = int(tot_rev - total_exp)
+        
+        # Add tax calculation after net = int(tot_rev - total_exp)
+# Calculate progressive tax based on country
+        country = biz.get('country', 'USA')
+        brackets = COUNTRY_TAX_RATES.get(country, COUNTRY_TAX_RATES['USA'])['brackets']
+
+# Calculate progressive tax
+        tax_rate = 0.0
+        for threshold, rate in brackets:
+            if net > threshold:
+                tax_rate = rate
+            else:
+                break
+
+# Only apply tax if the business is profitable
+        if net > 0:
+            tax_bill = int(net * tax_rate)
+            net -= tax_bill
+    
+    # Log tax payment
+            log_business_event(c, user_id, "TAX_PAID", f"Paid {tax_bill} in taxes")
+    
+    # Add tax to central reserve pool (if this feature is implemented)
+            try:
+                c.execute("UPDATE config SET value = value + ? WHERE key = 'central_reserve_pool'", (tax_bill,))
+            except:
+        # If the central_reserve_pool doesn't exist yet, create it
+                c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('central_reserve_pool', ?)", (tax_bill,))
         
         # --- DETAILED LEDGER GENERATION ---
         report = (
@@ -1514,8 +1830,8 @@ class Business(commands.Cog):
         if loan_pay > 0: report += f"- Loan Payment  : A$ {loan_pay:,}\n"
             
         report += f"==================================\n"
-        if net >= 0: report += f"+ NET PROFIT    : A$ {net:,}"
-        else: report += f"- NET LOSS      : A$ {abs(net):,}"
+        if net_profit >= 0: report += f"+ NET PROFIT    : A$ {net_profit:,}"
+        else: report += f"- NET LOSS      : A$ {abs(net_profit):,}"
         
         c.execute("UPDATE businesses SET capital = ?, reputation = ?, last_report = ? WHERE user_id = ?", (new_cap, new_rep, report, uid))
         
@@ -1527,7 +1843,7 @@ class Business(commands.Cog):
                 if biz['vp_id']:
                     atomic_eco_balance_update(ec, biz['vp_id'], biz['owner_salary'])
         c.execute("UPDATE employees SET morale = MAX(10, morale - 5) WHERE user_id = ?", (uid,))
-        return f"Net: A$ {net:,}", net
+        return f"Net: A$ {net_profit:,}", net_profit # ✅ FIXED
 
     def _trigger_board_meeting(self, c, user_id):
         crises = [
@@ -1613,6 +1929,9 @@ class Business(commands.Cog):
                 boost = max(0.5, min(2.0, ratio))
                 c.execute("UPDATE businesses SET demand_boost = ? WHERE sector = ?", (boost, sector))
 
+
+            c.execute("SELECT * FROM businesses")
+            cols = [desc[0] for desc in c.description]
             for row in c.fetchall():
                 biz = dict(zip(cols, row))
                 
@@ -1814,3 +2133,4 @@ class Business(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(Business(bot))
+
