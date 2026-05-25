@@ -5,7 +5,6 @@ from discord.ext import commands
 from dotenv import load_dotenv
 from typing import Literal
 from discord import app_commands
-# Mobile Sync Test - April 2026
 
 # Load environment variables
 load_dotenv()
@@ -41,6 +40,8 @@ initial_extensions = [
     'cogs.casino',
     'cogs.business3',
     'cogs.invest',
+    'cogs.chat_events',
+    'cogs.help_menu',
     'cogs.careers',
     'cogs.cupid_dashboard',
     'cogs.marketplace',
@@ -190,6 +191,45 @@ async def help_command(ctx):
 async def ping(ctx):
     latency = round(bot.latency * 1000)  # Latency in milliseconds
     await ctx.send(f'Pong! Latency: {latency}ms')
+
+
+
+# Inside your main.py or help cog
+
+@bot.tree.command(name="help", description="View all available commands")
+async def help_command(interaction: discord.Interaction):
+    # The "Trick": By typing `/command_name` in the description, Discord automatically
+    # turns it into a clickable "Use command" button.
+    
+    help_text = (
+        "**Economy Commands**\n"
+        f"• `/bal` - Check your wallet balance and card tier\n"
+        f"• `/daily` - Claim your daily allowance\n"
+        f"• `/work` - Earn coins based on your career and vehicle\n"
+        f"• `/invest market` - View the live stock exchange\n"
+        f"• `/invest buy` - Purchase shares of companies\n"
+        f"• `/marketplace browse` - Buy luxury vehicles and real estate\n"
+        f"• /casino - Enter the VIP gambling tables\n\n"
+        
+        "**Business Commands**\n"
+        f"• `/business` - Access the CEO Terminal\n"
+        f"• `/appoint` - Hire a VP to share your salary\n"
+        f"• `/bizleaderboard` - View the top corporations\n\n"
+        
+        "**Utility**\n"
+        f"• `/afk` - Set your status as AFK\n"
+        f"• `/remind` - Set a reminder\n"
+        f"• `/compat` - Check compatibility between users"
+    )
+
+    embed = discord.Embed(
+        title="<a:rainbowmouth:974704049154826310> Athena Commands",
+        description=help_text,
+        color=0xffffff # Valcord uses a clean white/black theme
+    )
+    embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/1441473281420169367/1501576429761200290/0ac4c99804a08a107d2cf6f09d79655f.jpg") # Optional: Your bot logo
+    
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 
