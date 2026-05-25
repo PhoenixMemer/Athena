@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import discord
 from discord import app_commands
 import time
@@ -390,3 +392,4 @@ class Investments(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(Investments(bot))
+

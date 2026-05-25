@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
@@ -752,3 +754,4 @@ async def lottery_signup(self, i: "discord.Interaction"):
 
 async def setup(bot):
     await bot.add_cog(Economy(bot))
+
