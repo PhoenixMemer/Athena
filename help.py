@@ -14,11 +14,11 @@ class HelpView(discord.ui.View):
     )
     async def select_callback(self, i: discord.Interaction, select: discord.ui.Select):
         if select.values[0] == "Business":
-            embed = discord.Embed(title="Business Commands", description="/launch, /audit, /hire, /hq", color=0xffffff)
+            embed = discord.Embed(title="🏢 Business Commands", description="/launch, /audit, /hire, /hq", color=0xffffff)
         elif select.values[0] == "Economy":
-            embed = discord.Embed(title="Economy Commands", description="/rob, /balance, /transfer", color=0xffffff)
+            embed = discord.Embed(title="💰 Economy Commands", description="/rob, /balance, /transfer", color=0xffffff)
         else:
-            embed = discord.Embed(title="Investment Commands", description="/invest buy, /invest sell, /ticker", color=0xffffff)
+            embed = discord.Embed(title="📈 Investment Commands", description="/invest buy, /invest sell, /ticker", color=0xffffff)
         
         await i.response.edit_message(embed=embed)
 

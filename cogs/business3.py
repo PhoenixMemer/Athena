@@ -1103,7 +1103,7 @@ async def country_btn(self, i: discord.Interaction, btn):
         now = time.time()
         if biz[6] and (now - biz[6])  < 14400: # 4 hours = 14400 seconds
             rem = int(14400 - (now - biz[6]))
-            return await i.response.send_message(f "⏱️ Your corporate consultants are currently analyzing data. Come back in **{rem // 3600}h {(rem % 3600)//60}m**. ", ephemeral=True)
+            return await i.response.send_message(f"⏱️ Your corporate consultants are currently analyzing data. Come back in **{rem // 3600}h {(rem % 3600)//60}m**. ", ephemeral=True)
             
         c.execute( "UPDATE businesses SET last_audit = ? WHERE user_id = ? ", (now, self.user_id))
         
@@ -1144,10 +1144,10 @@ async def country_btn(self, i: discord.Interaction, btn):
             
             # 2a. Check for overproduction
             if total_target  > (factory_cap * 1.5):
-                advice.append(f "⚠️ **Overproduction:** Your Daily Targets (approx {total_target:,}) vastly exceed your factory's capacity (approx {factory_cap:,}). You are paying baseline costs for units you physically cannot build. Lower your targets or hire more staff. ")
+                advice.append(f"⚠️ **Overproduction:** Your Daily Targets (approx {total_target:,}) vastly exceed your factory's capacity (approx {factory_cap:,}). You are paying baseline costs for units you physically cannot build. Lower your targets or hire more staff. ")
             # 2b. Check for understaffing
             elif factory_cap  > (total_target * 2):
-                advice.append(f "⚠️ **Understaffed:** You have {emp_count} employees but low production targets. You are wasting capital on payroll for idle workers. Fire staff or increase production targets. ")
+                advice.append(f"⚠️ **Understaffed:** You have {emp_count} employees but low production targets. You are wasting capital on payroll for idle workers. Fire staff or increase production targets. ")
             
             # 3. Check pricing
             for p in prods:
@@ -1157,16 +1157,16 @@ async def country_btn(self, i: discord.Interaction, btn):
                 
                 # 3a. Check for severe overpricing
                 if margin  > 4.0:
-                    advice.append(f "🟥 **SEVERE OVERPRICING:** Your product **{p[0]}** is marked up by over 400%. You are losing 95% of your sales volume to buyer boycotts. Edit the price down immediately. ")
+                    advice.append(f"🟥 **SEVERE OVERPRICING:** Your product **{p[0]}** is marked up by over 400%. You are losing 95% of your sales volume to buyer boycotts. Edit the price down immediately. ")
                 # 3b. Check for high pricing
                 elif margin  > 2.5:
-                    advice.append(f "🟧 **High Price:** Your product **{p[0]}** is marked up over 2.5x. You are losing 70% of potential sales. Consider lowering to the 'Sweet Spot' (2.5x base cost). ")
+                    advice.append(f"🟧 **High Price:** Your product **{p[0]}** is marked up over 2.5x. You are losing 70% of potential sales. Consider lowering to the 'Sweet Spot' (2.5x base cost). ")
                 # 3c. Check for optimal pricing
                 elif margin  > 1.5:
-                    advice.append(f "🟨 **Good Pricing:** Your product **{p[0]}** is priced well. Consider increasing production to maximize revenue. ")
+                    advice.append(f"🟨 **Good Pricing:** Your product **{p[0]}** is priced well. Consider increasing production to maximize revenue. ")
                 # 3d. Check for underpricing
                 else:
-                    advice.append(f "🟩 **Underpricing:** Your product **{p[0]}** is priced too low. You're missing out on potential profit. Consider increasing the price slightly. ")
+                    advice.append(f"🟩 **Underpricing:** Your product **{p[0]}** is priced too low. You're missing out on potential profit. Consider increasing the price slightly. ")
         
         # 4. Check for low capital
         if biz[0]  < 50000:
@@ -1192,7 +1192,7 @@ async def country_btn(self, i: discord.Interaction, btn):
             else:
                 break
         if tax_rate  > 0.15:
-            advice.append(f "⚠️ **High Tax Burden:** Your country's tax rate is {tax_rate*100:.1f}%. Consider expanding into countries with lower tax rates or optimizing your business structure to reduce your tax burden. ")
+            advice.append(f"⚠️ **High Tax Burden:** Your country's tax rate is {tax_rate*100:.1f}%. Consider expanding into countries with lower tax rates or optimizing your business structure to reduce your tax burden. ")
         
         # 7. Check for underutilized R&D
         if tech_level  < 10:
@@ -2133,3 +2133,4 @@ async def lottery_cmd(self, ctx):
 
 async def setup(bot):
     await bot.add_cog(Business(bot))
+
