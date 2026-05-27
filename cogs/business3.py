@@ -1,6 +1,6 @@
 from __future__ import annotations
 import discord
-from discord import app_commands
+from discord import app_commands, Interaction
 from discord.ext import commands, tasks
 import sqlite3
 import json
