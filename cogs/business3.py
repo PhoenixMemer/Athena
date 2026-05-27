@@ -893,6 +893,39 @@ class BoardMeetingView(discord.ui.View):
     async def btn_opt3(self, i: discord.Interaction, btn: discord.ui.Button):
         await self.handle_choice(i, 2)
 
+# ==========================================
+# 🔄 AUTO-REFRESH DASHBOARD HELPER
+# ==========================================
+async def get_dashboard(bot, user_id):
+    with get_db_cursor() as c:
+        c.execute("SELECT name, capital, reputation, description, hq_level, sector, is_public, tech_level, marketing_budget FROM businesses WHERE user_id = ?", (user_id,))
+        biz = c.fetchone()
+        if not biz:
+            return None, None
+        c.execute("SELECT COUNT(id), AVG(morale) FROM employees WHERE user_id = ?", (user_id,))
+        emps = c.fetchone()
+        
+    hq_lvl = biz[4] if biz[4] is not None else 0
+    embed = discord.Embed(title=f"꒰ა {biz[0]}  ⸝⸝", color=0xffffff)
+    desc = f"*{biz[3]}*\n\n"
+    desc += f"<:athenacoin:1503804322280902767> **Liquid Capital:** A$ {biz[1]:,}\n"
+    desc += f"└ **Brand Reputation:** {biz[2]}%\n\n"
+    desc += f"<:btb_white3:1375474689467748517> **HQ Level:** {HQ_LEVELS[hq_lvl]['name']}\n"
+    desc += f"└ **Workforce:** {emps[0] or 0} Staff (Morale: {int(emps[1]) if emps[1] else 100}%)\n\n"
+    desc += f"<:w_mail:1435879826446745630> **Market Sector:** {biz[5] or 'Unassigned'}\n"
+    desc += f"└ **R&D Level:** {biz[7]}  | **Marketing:** A$ {biz[8]:,}\n\n"
+    embed.description = desc
+    
+    with get_db_cursor() as c:
+        c.execute("SELECT value FROM config WHERE key = 'newspaper_banner'")
+        row = c.fetchone()
+        banner_url = row[0] if row else DEFAULT_BANNER
+    embed.set_image(url=banner_url)
+    embed.set_footer(text="Athena Central Reserve | Pending Taxes: %40 of Capital")
+    
+    return embed, TerminalView(bot)
+
+
 class TerminalView(discord.ui.View):
     def __init__(self, bot, user_id):
         super().__init__(timeout=None)
@@ -923,7 +956,14 @@ class TerminalView(discord.ui.View):
         embed = discord.Embed(title="꒰ა chérie  ⸝⸝", color=0xffffff, description=receipt)
         await i.response.send_message(embed=embed, ephemeral=True)
     
-    @discord.ui.button(label="Select Country", style=discord.ButtonStyle.secondary, row=3, emoji="<a:bl_vinyl:1375013151099195526>")
+    @discord.ui.button(label="Refresh", style=discord.ButtonStyle.secondary, emoji="<a:bl_vinyl:1375013151099195526>", custom_id="term_refresh", row=4)
+    async def refresh_dash(self, i: discord.Interaction, btn):
+        await i.response.defer()
+        embed, view = await get_dashboard(i.client, i.user.id)
+        await i.edit_original_response(embed=embed, view=view)
+
+
+    @discord.ui.button(label="Select Country", style=discord.ButtonStyle.secondary, row=3, emoji="<a:black:1509321860104458457>")
     async def country_btn(self, i: discord.Interaction, btn):
         """Button to select country"""
         options = [

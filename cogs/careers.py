@@ -32,7 +32,6 @@ def get_db_cursor():
 # ==========================================
 # 📊 CAREER PATHS & CARD MULTIPLIERS
 # ==========================================
-# ✅ FIX: NO TRAILING SPACES IN KEYS!
 CARD_TIERS = {
     "silver": {"threshold": 0, "file": "card_silver.png", "color": (255, 255, 255), "name": "Standard Silver", "multiplier": 1.0},
     "gold": {"threshold": 100000, "file": "card_gold.png", "color": (255, 255, 255), "name": "Gold Elite", "multiplier": 1.9},
@@ -45,7 +44,6 @@ CARD_TIERS = {
     "world_debit": {"threshold": 4500000, "file": "card_worlddebit.png", "color": (214, 214, 214), "name": "VISA World Debit", "multiplier": 5.7}
 }
 
-# ✅ FIX: Cleaned up dictionary structure (NO TRAILING SPACES)
 CAREER_PATHS = {
     "tech": {
         "name": "Technology",
@@ -97,6 +95,74 @@ CAREER_PATHS = {
             {"title": "Portfolio Manager", "base_pay": 3200, "xp_req": 500},
             {"title": "Israeli Hedge Fund CEO", "base_pay": 7000, "xp_req": 1200}
         ]
+    },
+    "diplomat": {
+        "name": "Diplomat",
+        "emoji": "<:diplomacy:1509315782650237162>",
+        "tasks": [
+            "negotiating a peace treaty between rival countries",
+            "hosting a highly classified UN summit",
+            "defusing a geopolitical crisis caused by a rogue ping",
+            "drafting international trade agreements",
+            "attending a state dinner to secure foreign alliances"
+        ],
+        "levels": [
+            {"title": "Foreign Service Intern", "base_pay": 900, "xp_req": 0},
+            {"title": "Embassy Attaché", "base_pay": 1500, "xp_req": 150},
+            {"title": "Senior Ambassador", "base_pay": 3200, "xp_req": 500},
+            {"title": "Foreign Minister of Israel", "base_pay": 7500, "xp_req": 1200}
+        ]
+    },
+    "army": {
+        "name": "Army",
+        "emoji": "🪖",
+        "tasks": [
+            "running a brutal 10-mile boot camp drill",
+            "cleaning the barracks with a toothbrush",
+            "leading a covert ground assault mission",
+            "maintaining the armory's tank treads",
+            "strategizing infantry maneuvers for the next campaign"
+        ],
+        "levels": [
+            {"title": "Private", "base_pay": 900, "xp_req": 0},
+            {"title": "Sergeant", "base_pay": 1500, "xp_req": 150},
+            {"title": "Captain", "base_pay": 3200, "xp_req": 500},
+            {"title": "Major", "base_pay": 4000, "xp_req": 800}
+        ]
+    },
+    "navy": {
+        "name": "Navy",
+        "emoji": "⚓",
+        "tasks": [
+            "swabbing the deck of an aircraft carrier",
+            "monitoring sonar for unidentified submarines",
+            "coordinating a massive fleet blockade",
+            "inspecting the nuclear reactor on the sub",
+            "navigating a destroyer through rough seas"
+        ],
+        "levels": [
+            {"title": "Seaman Recruit", "base_pay": 900, "xp_req": 0},
+            {"title": "Petty Officer", "base_pay": 1500, "xp_req": 150},
+            {"title": "Lieutenant Commander", "base_pay": 3200, "xp_req": 500},
+            {"title": "Commander", "base_pay": 4000, "xp_req": 800}
+        ]
+    },
+    "air_force": {
+        "name": "Air Force",
+        "emoji": "<:air_force:1509315094868394105>",
+        "tasks": [
+            "performing pre flight checks on the F-22 Raptor",
+            "running flight simulation drills",
+            "executing a supersonic stealth reconnaissance mission",
+            "refueling jets in mid air",
+            "managing global air traffic control operations"
+        ],
+        "levels": [
+            {"title": "Airman", "base_pay": 900, "xp_req": 0},
+            {"title": "Staff Sergeant", "base_pay": 1500, "xp_req": 150},
+            {"title": "Fighter Pilot", "base_pay": 3200, "xp_req": 500},
+            {"title": "Wing Commander", "base_pay": 4000, "xp_req": 800}
+        ]
     }
 }
 
@@ -129,24 +195,58 @@ class CareerDropdown(discord.ui.Select):
         options = [
             discord.SelectOption(label='Technology Sector', description='Code your way to CTO.', value='tech', emoji='<:tech_athena:1503090321620336650>'),
             discord.SelectOption(label='Medical Field', description='Save lives and run the hospital.', value='medicine', emoji='<:healthcare_athena:1503090377203126282>'),
-            discord.SelectOption(label='Financial District', description='Climb Wall Street to Hedge Fund CEO.', value='finance', emoji='<:finance_athena:1503090272983060661>')
+            discord.SelectOption(label='Financial District', description='Climb Wall Street to Hedge Fund CEO.', value='finance', emoji='<:finance_athena:1503090272983060661>'),
+            discord.SelectOption(label='Diplomatic Corps', description='Negotiate peace as Secretary of State.', value='diplomat', emoji='<:diplomacy:1509315782650237162>'),
+            discord.SelectOption(label='Army', description='Lead ground assaults as an Army Officer.', value='army', emoji='🪖'),
+            discord.SelectOption(label='Navy', description='Command the seas as a Navy Officer.', value='navy', emoji='⚓'),
+            discord.SelectOption(label='Air Force', description='Dominate the skies as an Air Force pilot.', value='air_force', emoji='<:air_force:1509315094868394105>')
         ]
         super().__init__(placeholder='Select a career path...', min_values=1, max_values=1, options=options)
 
     async def callback(self, interaction: discord.Interaction):
         path_key = self.values[0]
-        with get_db_cursor() as cursor:
-            cursor.execute("SELECT path FROM user_careers WHERE user_id = ?", (interaction.user.id,))
-            if cursor.fetchone():
-                return await interaction.response.send_message("<a:wt_torono:1480580892706603018> You already have a career!", ephemeral=True)
-                
-            cursor.execute("INSERT INTO user_careers (user_id, path, level, xp, last_worked) VALUES (?, ?, 0, 0, 0)", (interaction.user.id, path_key))
+        user_id = interaction.user.id
         
-        job_title = CAREER_PATHS[path_key]["levels"][0]["title"]
-        await interaction.response.send_message(
-            f"<a:wt_toroexclaim:1480581004317036624> **Congratulations!** You have been hired as a **{job_title}**! Use `/work` to start earning.", 
-            ephemeral=True
-        )
+        with get_db_cursor() as cursor:
+            cursor.execute("SELECT path, level FROM user_careers WHERE user_id = ?", (user_id,))
+            career = cursor.fetchone()
+            
+            if career:
+                current_path, current_level = career
+                
+                if current_path == path_key:
+                    return await interaction.response.send_message("<a:wt_torono:1480580892706603018> You are already pursuing this career!", ephemeral=True)
+                
+                # Dynamic MAX level check based on the length of the current career's levels list
+                max_level_for_current = len(CAREER_PATHS[current_path]["levels"]) - 1
+                
+                if current_level < max_level_for_current:
+                    return await interaction.response.send_message(
+                        f"<a:wt_torono:1480580892706603018> You cannot switch careers yet! You must reach the MAX level (**Level {max_level_for_current}**) in your current **{CAREER_PATHS[current_path]['name']}** career first.", 
+                        ephemeral=True
+                    )
+                
+                # Process the career switch and reset XP/Level
+                cursor.execute(
+                    "UPDATE user_careers SET path = ?, level = 0, xp = 0, last_worked = 0 WHERE user_id = ?", 
+                    (path_key, user_id)
+                )
+                new_title = CAREER_PATHS[path_key]["levels"][0]["title"]
+                await interaction.response.send_message(
+                    f"<a:wt_toroexclaim:1480581004317036624> **Congratulations!** You have successfully switched your career to **{CAREER_PATHS[path_key]['name']}** and are now a **{new_title}**. Your progress has been reset for the new pathway.", 
+                    ephemeral=True
+                )
+            else:
+                # Brand new user
+                cursor.execute(
+                    "INSERT INTO user_careers (user_id, path, level, xp, last_worked) VALUES (?, ?, 0, 0, 0)", 
+                    (user_id, path_key)
+                )
+                job_title = CAREER_PATHS[path_key]["levels"][0]["title"]
+                await interaction.response.send_message(
+                    f"<a:wt_toroexclaim:1480581004317036624> **Congratulations!** You have been hired as a **{job_title}**! Use `/work` to start earning.", 
+                    ephemeral=True
+                )
 
 class CareerView(discord.ui.View):
     def __init__(self):
@@ -254,7 +354,11 @@ class Careers(commands.Cog):
             "**<:s_white2:1382052523166142486> Medical:** Hospital Volunteer > Registered Nurse > Junior Doctor > General Surgery Consultants\n\n"
             "**<:s_white2:1382052523166142486> Tech:** Software Engineering Intern > Junior Developer > Lead Engineer > Chief Technology Officer\n\n"
             "**<:s_white2:1382052523166142486> Finance:** Bank Teller > Financial Analyst > Portfolio Manager > Israeli Hedge Fund CEO\n\n"
-            "*Note: Once you choose a career, you cannot change it!*"
+            "**<:s_white2:1382052523166142486> Diplomat:** Foreign Service Intern > Embassy Attaché > Senior Ambassador > Secretary of State\n\n"
+            "**<:s_white2:1382052523166142486> Army:** Private > Sergeant > Captain > Five-Star General\n\n"
+            "**<:s_white2:1382052523166142486> Navy:** Seaman Recruit > Petty Officer > Fleet Commander > Fleet Admiral\n\n"
+            "**<:s_white2:1382052523166142486> Air Force:** Airman > Staff Sergeant > Fighter Pilot > Air Force Chief of Staff\n\n"
+            "*Note: Once you choose a career, you must reach the MAX level to switch it!*"
         )
         embed.set_image(url="https://media.discordapp.net/attachments/1375079530183790744/1501577920270041199/2227dbca3d307d172781fdb78c85f5ae.jpg?ex=6a01daea&is=6a00896a&hm=b7ae30d45a5a48da6327d1fe629ee924e09036c2aacae1ee55644c776f125881&&format=webp&width=1008&height=336")
         await interaction.edit_original_response(content=None, embed=embed, view=CareerView())
@@ -352,6 +456,8 @@ class Careers(commands.Cog):
             flavor_msg = "<:btb_white3:1375474689467748517> **Shift Report:** You spent your shift in the bunker treating burn unit patients."
         elif path_key == "finance":
             flavor_msg = "<:btb_white3:1375474689467748517> **Shift Report:** You spent your shift on the trading floor hiding tax gains."
+        elif path_key in ["diplomat", "army", "navy", "air_force"]:
+            flavor_msg = f"<:btb_white3:1375474689467748517> **Shift Report:** You spent your shift serving the {path_data['name']} branch."
         else:
             flavor_msg = "<:btb_white3:1375474689467748517> **Shift Report:** You spent your shift working."
 
