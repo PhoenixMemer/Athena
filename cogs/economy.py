@@ -258,13 +258,6 @@ class EarlyClaimView(discord.ui.View):
         await interaction.response.edit_message(content="Canceled. Your stake remains safely locked.", embed=None, view=self)
 
 class Economy(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
-        self.db_path = DB_PATH
-        self.setup_db()
-        self.loan_debt_collector.start()
-        self.debt_penalty_loop.start()
-
     def setup_db(self):
         with get_db_cursor() as cursor:
             cursor.execute('''CREATE TABLE IF NOT EXISTS wallets (
@@ -272,25 +265,31 @@ class Economy(commands.Cog):
                 active_card TEXT DEFAULT 'silver', highest_balance INTEGER DEFAULT 0,
                 last_daily REAL DEFAULT 0
             )''')
+            
             cursor.execute('''CREATE TABLE IF NOT EXISTS transactions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER,
                 amount INTEGER, type TEXT, description TEXT,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
             )''')
+            
             cursor.execute('''CREATE TABLE IF NOT EXISTS loans (
                 user_id INTEGER PRIMARY KEY, amount INTEGER, due_date REAL
             )''')
+            
             cursor.execute('''CREATE TABLE IF NOT EXISTS stakes (
                 user_id INTEGER PRIMARY KEY, amount INTEGER, unlock_time REAL, yield_rate REAL
             )''')
+            
             cursor.execute('''CREATE TABLE IF NOT EXISTS config (
                 id INTEGER PRIMARY KEY, mimu_rate INTEGER DEFAULT 100
             )''')
-            # FIX: Added command_cooldowns table creation
+            
+            # FIX: Added the missing command_cooldowns table
             cursor.execute('''CREATE TABLE IF NOT EXISTS command_cooldowns (
                 user_id INTEGER, command_name TEXT, last_used REAL,
                 PRIMARY KEY (user_id, command_name)
             )''')
+            
             cursor.execute("INSERT OR IGNORE INTO config (id, mimu_rate) VALUES (1, 100)")
 
     def get_wallet_data(self, user_id: int):
@@ -374,10 +373,19 @@ class Economy(commands.Cog):
 
     @commands.command(name="bal", aliases=["balance", "b"])
     async def prefix_bal(self, ctx: commands.Context):
-        async with ctx.typing():
-            bal, active_card = self.get_wallet_data(ctx.author.id)
-            image_buffer = await self.generate_wallet_card(ctx.author, bal, active_card)
-            await ctx.send(file=discord.File(fp=image_buffer, filename="wallet.png"))
+        try:
+            # Try to trigger the typing indicator and send the card
+            async with ctx.typing():
+                bal, active_card = self.get_wallet_data(ctx.author.id)
+                image_buffer = await self.generate_wallet_card(ctx.author, bal, active_card)
+                await ctx.send(file=discord.File(fp=image_buffer, filename="wallet.png"))
+                
+        except discord.Forbidden:
+            # If the bot is blocked from typing/sending in that channel, try DMing the user instead
+            try:
+                await ctx.author.send("I don't have permission to type or send messages in that channel! Please ask a server admin to fix my permissions.")
+            except discord.Forbidden:
+                pass # The user has their DMs locked too, just fail silently without crashing the bot
 
     @tasks.loop(hours=8)
     async def run_lottery(self):
@@ -536,6 +544,9 @@ class Economy(commands.Cog):
         embed = discord.Embed(title="꒰ა Wire Transfer ⸝⸝", color=0xffffff)
         embed.description = f"Successfully transferred **A$ {amount:,}** to {user.mention}."
         await interaction.response.send_message(embed=embed)
+
+
+    
 
     @app_commands.command(name="loan", description="Take a loan from the Central Reserve (Max 7 days)")
     @app_commands.describe(amount="Amount to borrow (Max A$ 100,000)", days="Days until repayment (1-7)")

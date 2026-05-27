@@ -247,6 +247,8 @@ class MarketplaceDropdown(discord.ui.Select):
             discord.SelectOption(label='Residential Listings', description='Flats, Townhouses, and Cottages', value='Residential', emoji="<a:wt_torosoul:1480580991503306865>"),
             discord.SelectOption(label='Commercial Listings', description='M&S, Greggs, Weatherspoons', value='Commercial', emoji="<a:wt_torosilly:1480580853720551637>"),
             discord.SelectOption(label='Elite Listings', description='High society luxury real estate', value='Elite', emoji="<a:wt_toroking:1480580998742937691>"),
+            discord.SelectOption(label='Yacht Marina', description='Superyachts for the wealthy', value='Yacht', emoji="<a:wt_torofreeze:1480580916559478966>"),
+            discord.SelectOption(label='Private Aviation', description='Private Jets for the not broke people', value='Jet', emoji="<a:wt_toroglassesshock:1480581012475084892>"),
             discord.SelectOption(label='Vehicle Showroom', description='Supercars and Luxury Commuters', value='Vehicles', emoji="<a:wt_toroleaf:1480580940785913967>"),
             discord.SelectOption(label='P2P Trading Floor', description='Buy assets directly from OTHER players', value='P2P', emoji="<a:wt_torofly:1480580890185826364>"),
         ]
@@ -272,6 +274,20 @@ class MarketplaceDropdown(discord.ui.Select):
                     desc += f"<:athenacoin:1503804322280902767> **Price:** A$ {price:,}\n\n"
                 embed.description = desc if listings else "The trading floor is currently empty. List your properties with `/marketplace list`!"
                 
+
+            elif category in ["Car", "Yacht", "Jet"]:
+                cursor.execute("SELECT id, name, price, cooldown_reduction FROM market_vehicles WHERE category = ?", (category,))
+                vehicles = cursor.fetchall()
+                embed = discord.Embed(title=f"{category} Showroom", color=0xffffff)
+                desc = "Luxury assets. Owning these boosts prestige (will soon have perks for businesses)\n\n"
+                for vid, name, price, bonus in vehicles:
+                    desc += f"**{name}** `[{vid}]`\n"
+                    if bonus > 0: desc += f"**Commute Bonus:** -{bonus}m On Work Cooldown\n"
+                    desc += f"<:athenacoin:1503804322280902767> **Price:** A$ {price:,}\n\n"
+                embed.description = desc
+
+
+            
             elif category == "Vehicles":
                 cursor.execute("SELECT id, name, price, cooldown_reduction FROM market_vehicles")
                 vehicles = cursor.fetchall()
@@ -349,7 +365,7 @@ class Marketplace(commands.Cog):
             cursor.execute('CREATE TABLE IF NOT EXISTS market_properties (id TEXT PRIMARY KEY, name TEXT, category TEXT, base_price INTEGER, base_rent INTEGER)')
             cursor.execute('CREATE TABLE IF NOT EXISTS user_properties (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, property_id TEXT, quality INTEGER DEFAULT 20, needs_repair INTEGER DEFAULT 0, UNIQUE(user_id, property_id))')
             
-            cursor.execute('CREATE TABLE IF NOT EXISTS market_vehicles (id TEXT PRIMARY KEY, name TEXT, price INTEGER, cooldown_reduction INTEGER)')
+            cursor.execute('CREATE TABLE IF NOT EXISTS market_vehicles (id TEXT PRIMARY KEY, name TEXT, price INTEGER, cooldown_reduction INTEGER, category TEXT DEFAULT "Car")')
             cursor.execute('CREATE TABLE IF NOT EXISTS user_vehicles (user_id INTEGER, vehicle_id TEXT, needs_repair INTEGER DEFAULT 0, UNIQUE(user_id, vehicle_id))')
             
             cursor.execute('CREATE TABLE IF NOT EXISTS p2p_listings (id INTEGER PRIMARY KEY AUTOINCREMENT, seller_id INTEGER, item_id TEXT, price INTEGER)')
@@ -367,6 +383,10 @@ class Marketplace(commands.Cog):
                 last_run REAL
             )''')
             
+            try: cursor.execute("ALTER TABLE market_vehicles ADD COLUMN category TEXT DEFAULT 'Car'")
+            except: pass
+            try: cursor.execute("ALTER TABLE wallets ADD COLUMN profile_banner TEXT")
+            except: pass
             try: cursor.execute("ALTER TABLE user_properties ADD COLUMN needs_repair INTEGER DEFAULT 0")
             except: pass
             try: cursor.execute("ALTER TABLE user_vehicles ADD COLUMN needs_repair INTEGER DEFAULT 0")
@@ -384,6 +404,19 @@ class Marketplace(commands.Cog):
                 ('CAR7', 'Ferrari SF90 Stradale', 320000, 60)
             ]
             cursor.executemany("INSERT OR REPLACE INTO market_vehicles VALUES (?, ?, ?, ?)", vehicles)
+
+            yachts_and_planes = [
+                ('YACHT1', 'Sunseeker Predator 84', 15000000, 0, 'Yacht'),
+                ('YACHT2', 'Benetti Oasis 67', 25000000, 0, 'Yacht'),
+                ('YACHT3', 'Azzam Superyacht', 35000000, 0, 'Yacht'),
+                ('YACHT4', 'Cassiopeia', 45000000, 0, 'Yacht'),
+                ('YACHT5', 'Polaris Valencia', 55000000, 0, 'Yacht'),
+                ('JET1', 'Cessna Citation CJ4', 7000000, 0, 'Jet'),
+                ('JET2', 'Gulfstream G700', 15000000, 0, 'Jet'),
+                ('JET3', 'Dassault Falcon 10X', 25000000, 0, 'Jet'),
+                ('JET4', 'Bombardier Global 6000', 35000000, 0, 'Jet')
+            ]
+            cursor.executemany("INSERT OR IGNORE INTO market_vehicles VALUES (?, ?, ?, ?, ?)", yachts_and_planes)
             
             properties = [
                 ('RES1', 'The Kensington Flat', 'Residential', 25000, 1250),

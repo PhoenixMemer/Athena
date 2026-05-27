@@ -923,7 +923,7 @@ class TerminalView(discord.ui.View):
         embed = discord.Embed(title="꒰ა chérie  ⸝⸝", color=0xffffff, description=receipt)
         await i.response.send_message(embed=embed, ephemeral=True)
     
-    @discord.ui.button(label="Select Country", style=discord.ButtonStyle.secondary, row=3, emoji="<a:wt_toroleaf:1480580940785913967>")
+    @discord.ui.button(label="Select Country", style=discord.ButtonStyle.secondary, row=3, emoji="<a:bl_vinyl:1375013151099195526>")
     async def country_btn(self, i: discord.Interaction, btn):
         """Button to select country"""
         options = [
@@ -1304,7 +1304,7 @@ class Business(commands.Cog):
                 else: await channel.send(embed=embed)
             except: pass
 
-    @app_commands.command(name="help", description="View the bot's command help")
+    @app_commands.command(name="bizhelp", description="View the bot's command help")
     async def help_cmd(self, i: discord.Interaction):
         """Displays a modal with all commands"""
         embed = discord.Embed(title="Athena Business Command Help", color=0xffffff)
