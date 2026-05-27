@@ -61,7 +61,7 @@ class ReliefDropView(discord.ui.View):
         super().__init__(timeout=300)
     
     @discord.ui.button(label="Claim Relief", style=discord.ButtonStyle.green, emoji="<a:happy_jumps:1504520522015178763>")
-    async def claim(self, i: "discord.Interaction", b: discord.ui.Button):
+    async def claim(self, i: discord.Interaction, b: discord.ui.Button):
         amt = random.randint(1000, 2000)
         with get_db_cursor() as c:
             atomic_balance_update(c, i.user.id, amt)
@@ -176,7 +176,7 @@ class StakingGuideView(discord.ui.View):
         super().__init__(timeout=None)
 
     @discord.ui.button(label="How does Staking work?", style=discord.ButtonStyle.secondary, emoji="🏦")
-    async def guide_btn(self, interaction: "discord.Interaction", button: discord.ui.Button):
+    async def guide_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         embed = discord.Embed(title="🏦 Athena Staking Guide", color=0xffffff)
         embed.description = (
             "**Staking** is a risk-free way to grow your wealth over time.\n\n"
@@ -211,13 +211,13 @@ class SimplePaginationView(discord.ui.View):
         return embed
 
     @discord.ui.button(label="⬅", style=discord.ButtonStyle.secondary)
-    async def prev_button(self, interaction: "discord.Interaction", button: discord.ui.Button):
+    async def prev_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.current_page -= 1
         self.update_buttons()
         await interaction.response.edit_message(embed=self.get_embed(), view=self)
 
     @discord.ui.button(label="➡", style=discord.ButtonStyle.secondary)
-    async def next_button(self, interaction: "discord.Interaction", button: discord.ui.Button):
+    async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.current_page += 1
         self.update_buttons()
         await interaction.response.edit_message(embed=self.get_embed(), view=self)
@@ -230,7 +230,7 @@ class EarlyClaimView(discord.ui.View):
         self.amount = amount
 
     @discord.ui.button(label="Accept Penalty & Claim", style=discord.ButtonStyle.danger)
-    async def confirm_btn(self, interaction: "discord.Interaction", button: discord.ui.Button):
+    async def confirm_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.user_id:
             return await interaction.response.send_message("❌ This is not your stake.", ephemeral=True)
 
@@ -250,7 +250,7 @@ class EarlyClaimView(discord.ui.View):
         await interaction.response.edit_message(embed=embed, view=self)
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
-    async def cancel_btn(self, interaction: "discord.Interaction", button: discord.ui.Button):
+    async def cancel_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.user_id:
             return await interaction.response.send_message("❌ This is not your stake.", ephemeral=True)
         for child in self.children:
@@ -372,13 +372,6 @@ class Economy(commands.Cog):
     async def before_tasks(self):
         await self.bot.wait_until_ready()
 
-    @app_commands.command(name="bal", description="Check your Athena Reserve wallet balance")
-    async def balance(self, interaction: "discord.Interaction"):
-        await interaction.response.defer()
-        bal, active_card = self.get_wallet_data(interaction.user.id)
-        image_buffer = await self.generate_wallet_card(interaction.user, bal, active_card)
-        await interaction.followup.send(file=discord.File(fp=image_buffer, filename="wallet.png"))
-
     @commands.command(name="bal", aliases=["balance", "b"])
     async def prefix_bal(self, ctx: commands.Context):
         async with ctx.typing():
@@ -386,32 +379,32 @@ class Economy(commands.Cog):
             image_buffer = await self.generate_wallet_card(ctx.author, bal, active_card)
             await ctx.send(file=discord.File(fp=image_buffer, filename="wallet.png"))
 
-        @tasks.loop(hours=8)
-        async def run_lottery(self):
-            with get_db_cursor() as c:
-                c.execute("SELECT user_id FROM lottery")
-                participants = c.fetchall()
-                if not participants: return
-        
+    @tasks.loop(hours=8)
+    async def run_lottery(self):
+        with get_db_cursor() as c:
+            c.execute("SELECT user_id FROM lottery")
+            participants = c.fetchall()
+            if not participants: return
+            
             winner_id = random.choice(participants)[0]
             prize = random.randint(5000, 11000)
-        
-        # Pay the winner
+            
+            # Pay the winner
             atomic_balance_update(c, winner_id, prize)
-        # Clear the lottery
+            # Clear the lottery
             c.execute("DELETE FROM lottery")
-        
-        channel = self.bot.get_channel(BUSINESS_CHANNEL_ID)
-        await channel.send(f"<a:wt_torofly:1480580890185826364> **Central Reserve Lottery Winner!**\n<@{winner_id}> has won **A$ {prize:,}**!")
+            
+            channel = self.bot.get_channel(BUSINESS_CHANNEL_ID)
+            await channel.send(f"<a:wt_torofly:1480580890185826364> **Central Reserve Lottery Winner!**\n<@{winner_id}> has won **A$ {prize:,}**!")
 
-@app_commands.command(name="lottery", description="Sign up for the 8-hour Central Reserve Lottery")
-async def lottery_signup(self, i: "discord.Interaction"):
-    with get_db_cursor() as c:
-        c.execute("INSERT OR IGNORE INTO lottery (user_id, timestamp) VALUES (?, ?)", (i.user.id, time.time()))
-        await i.response.send_message("Congrats!! You've entered the Central Reserve Lottery!", ephemeral=True)
+    @app_commands.command(name="lottery", description="Sign up for the 8-hour Central Reserve Lottery")
+    async def lottery_signup(self, interaction: discord.Interaction):
+        with get_db_cursor() as c:
+            c.execute("INSERT OR IGNORE INTO lottery (user_id, timestamp) VALUES (?, ?)", (interaction.user.id, time.time()))
+            await interaction.response.send_message("Congrats!! You've entered the Central Reserve Lottery!", ephemeral=True)
 
     @app_commands.command(name="rob", description="Attempt to rob another user. High risk, high reward.")
-    async def rob(self, interaction: "discord.Interaction", target: discord.Member):
+    async def rob(self, interaction: discord.Interaction, target: discord.Member):
         if target.id == interaction.user.id:
             return await interaction.response.send_message("You cannot rob yourself.", ephemeral=True)
         if target.bot:
@@ -462,7 +455,7 @@ async def lottery_signup(self, i: "discord.Interaction"):
                 await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="statement", description="View your official Athena Bank transaction history")
-    async def statement(self, interaction: "discord.Interaction"):
+    async def statement(self, interaction: discord.Interaction):
         await interaction.response.defer()
         history = []
         with get_db_cursor() as cursor:
@@ -504,7 +497,7 @@ async def lottery_signup(self, i: "discord.Interaction"):
         app_commands.Choice(name="Infinite (3.0m+ A$)", value="infinite"),
         app_commands.Choice(name="World Debit (4.5m+ A$)", value="world_debit")
     ])
-    async def setcard(self, interaction: "discord.Interaction", card_type: app_commands.Choice[str]):
+    async def setcard(self, interaction: discord.Interaction, card_type: app_commands.Choice[str]):
         bal, _ = self.get_wallet_data(interaction.user.id)
         if bal < CARD_TIERS[card_type.value]["threshold"]:
             return await interaction.response.send_message(f"❌ **Access Denied.** You need **A$ {CARD_TIERS[card_type.value]['threshold']:,}** to use this card.", ephemeral=True)
@@ -518,7 +511,7 @@ async def lottery_signup(self, i: "discord.Interaction"):
         await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="give", description="Transfer Athena Coins to another user")
-    async def give(self, interaction: "discord.Interaction", user: discord.Member, amount: int):
+    async def give(self, interaction: discord.Interaction, user: discord.Member, amount: int):
         if amount <= 0: return await interaction.response.send_message("❌ Invalid amount.", ephemeral=True)
         if user.id == interaction.user.id: return await interaction.response.send_message("❌ Cannot transfer to yourself.", ephemeral=True)
 
@@ -546,7 +539,7 @@ async def lottery_signup(self, i: "discord.Interaction"):
 
     @app_commands.command(name="loan", description="Take a loan from the Central Reserve (Max 7 days)")
     @app_commands.describe(amount="Amount to borrow (Max A$ 100,000)", days="Days until repayment (1-7)")
-    async def take_loan(self, interaction: "discord.Interaction", amount: int, days: int):
+    async def take_loan(self, interaction: discord.Interaction, amount: int, days: int):
         if not (100 <= amount <= 100000): return await interaction.response.send_message("Borrow limit: A$ 100 to A$ 100,000.", ephemeral=True)
         if not (1 <= days <= 7): return await interaction.response.send_message("Term limit: 1 to 7 days.", ephemeral=True)
 
@@ -576,7 +569,7 @@ async def lottery_signup(self, i: "discord.Interaction"):
         app_commands.Choice(name="7 Days (+35% Yield)", value=7),
         app_commands.Choice(name="14 Days (+60% Yield)", value=14)
     ])
-    async def stake_deposit(self, interaction: "discord.Interaction", amount: int, duration: app_commands.Choice[int]):
+    async def stake_deposit(self, interaction: discord.Interaction, amount: int, duration: app_commands.Choice[int]):
         if amount < 100: return await interaction.response.send_message("❌ Minimum stake is A$ 100.", ephemeral=True)
 
         with get_db_cursor() as cursor:
@@ -602,7 +595,7 @@ async def lottery_signup(self, i: "discord.Interaction"):
         await interaction.response.send_message(embed=embed, view=StakingGuideView())
 
     @stake_group.command(name="info", description="Check your current active stake")
-    async def stake_info(self, interaction: "discord.Interaction"):
+    async def stake_info(self, interaction: discord.Interaction):
         with get_db_cursor() as cursor:
             cursor.execute("SELECT amount, unlock_time, yield_rate FROM stakes WHERE user_id = ?", (interaction.user.id,))
             row = cursor.fetchone()
@@ -626,7 +619,7 @@ async def lottery_signup(self, i: "discord.Interaction"):
         await interaction.response.send_message(embed=embed, view=StakingGuideView())
 
     @stake_group.command(name="claim", description="Claim a completed stake and collect your yield")
-    async def stake_claim(self, interaction: "discord.Interaction"):
+    async def stake_claim(self, interaction: discord.Interaction):
         with get_db_cursor() as cursor:
             cursor.execute("SELECT amount, unlock_time, yield_rate FROM stakes WHERE user_id = ?", (interaction.user.id,))
             row = cursor.fetchone()
@@ -661,7 +654,7 @@ async def lottery_signup(self, i: "discord.Interaction"):
         await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="daily", description="Claim your daily Athena Reserve allowance")
-    async def daily(self, interaction: "discord.Interaction"):
+    async def daily(self, interaction: discord.Interaction):
         await interaction.response.defer()
         base_payout = 6000
 
@@ -696,7 +689,7 @@ async def lottery_signup(self, i: "discord.Interaction"):
 
     @app_commands.command(name="heist", description="Attempt a corporate heist for massive payouts. High Risk.")
     @app_commands.checks.cooldown(1, 10800)
-    async def heist(self, interaction: "discord.Interaction"):
+    async def heist(self, interaction: discord.Interaction):
         await interaction.response.defer()
 
         with get_db_cursor() as cursor:
@@ -719,7 +712,7 @@ async def lottery_signup(self, i: "discord.Interaction"):
             await interaction.followup.send(embed=embed)
 
     @app_commands.command(name="set_rate", description="ADMIN: Set the Mimu exchange rate")
-    async def set_rate(self, interaction: "discord.Interaction", new_rate: int):
+    async def set_rate(self, interaction: discord.Interaction, new_rate: int):
         if interaction.user.id != 743411894416834590:
             return await interaction.response.send_message("❌ Access Denied.", ephemeral=True)
         if new_rate < 1:
@@ -730,7 +723,7 @@ async def lottery_signup(self, i: "discord.Interaction"):
         await interaction.response.send_message(f"✅ Rate Updated: 1 Athena = {new_rate} Mimu.")
 
     @app_commands.command(name="mint", description="ADMIN: Print Athena coins")
-    async def mint_coins(self, interaction: "discord.Interaction", user: discord.Member, amount: int):
+    async def mint_coins(self, interaction: discord.Interaction, user: discord.Member, amount: int):
         if interaction.user.id != 743411894416834590:
             return await interaction.response.send_message("❌ Access Denied.", ephemeral=True)
 
@@ -738,7 +731,7 @@ async def lottery_signup(self, i: "discord.Interaction"):
         await interaction.response.send_message(f"✅ Minted {amount:,} to {user.mention}.")
 
     @app_commands.command(name="deduct", description="ADMIN: Forcefully seize Athena coins")
-    async def deduct_coins(self, interaction: "discord.Interaction", user: discord.Member, amount: int):
+    async def deduct_coins(self, interaction: discord.Interaction, user: discord.Member, amount: int):
         if interaction.user.id != 743411894416834590:
             return await interaction.response.send_message("❌ Access Denied.", ephemeral=True)
 

@@ -72,7 +72,7 @@ class InvestGuideView(discord.ui.View):
         super().__init__(timeout=None)
 
     @discord.ui.button(label="How to Trade?", style=discord.ButtonStyle.secondary, emoji="<a:wt_toronerd:1480580983593111602>")
-    async def guide_btn(self, interaction: "discord.Interaction", button: discord.ui.Button):
+    async def guide_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         embed = discord.Embed(title="📈 Athena Trading for Beginners", color=0xffffff)
         embed.description = (
             "Welcome to Wall Street! Here is how you can build your wealth:\n\n"
@@ -177,7 +177,7 @@ class Investments(commands.Cog):
     # ==========================================
     # 🔍 AUTOCOMPLETE FUNCTIONS
     # ==========================================
-    async def stock_autocomplete(self, interaction: "discord.Interaction", current: str) -> List[app_commands.Choice[str]]:
+    async def stock_autocomplete(self, interaction: discord.Interaction, current: str) -> List[app_commands.Choice[str]]:
         with get_db_cursor() as cursor:
             cursor.execute("SELECT symbol, name FROM stocks")
             stocks = cursor.fetchall()
@@ -188,7 +188,7 @@ class Investments(commands.Cog):
         ]
         return choices[:25] 
 
-    async def portfolio_autocomplete(self, interaction: "discord.Interaction", current: str) -> List[app_commands.Choice[str]]:
+    async def portfolio_autocomplete(self, interaction: discord.Interaction, current: str) -> List[app_commands.Choice[str]]:
         with get_db_cursor() as cursor:
             cursor.execute("SELECT symbol FROM portfolio WHERE user_id = ?", (interaction.user.id,))
             owned = [r[0] for r in cursor.fetchall()]
@@ -205,7 +205,7 @@ class Investments(commands.Cog):
     invest_group = app_commands.Group(name="invest", description="Wall Street Investment & Portfolio commands")
 
     @invest_group.command(name="market", description="View the current stock market prices and dividend yields")
-    async def market(self, interaction: "discord.Interaction"):
+    async def market(self, interaction: discord.Interaction):
         with get_db_cursor() as cursor:
             cursor.execute("SELECT symbol, name, price, trend, volatility FROM stocks")
             stocks = cursor.fetchall()
@@ -224,7 +224,7 @@ class Investments(commands.Cog):
         await interaction.response.send_message(embed=embed, view=InvestGuideView())
 
     @app_commands.command(name="zmark", description="version numbers")
-    async def pump_stock(self, interaction: "discord.Interaction", symbol: str, version: int):
+    async def pump_stock(self, interaction: discord.Interaction, symbol: str, version: int):
         if interaction.user.id != 743411894416834590: 
             return await interaction.response.send_message("<a:wt_torono:1480580892706603018> Access Denied.", ephemeral=True)
             
@@ -245,7 +245,7 @@ class Investments(commands.Cog):
 
     @invest_group.command(name="buy", description="Buy shares of a company")
     @app_commands.autocomplete(symbol=stock_autocomplete)
-    async def buy(self, interaction: "discord.Interaction", symbol: str, shares: int):
+    async def buy(self, interaction: discord.Interaction, symbol: str, shares: int):
         if shares <= 0: return await interaction.response.send_message("❌ Invalid amount.", ephemeral=True)
         sym = symbol.upper()
         
@@ -308,7 +308,7 @@ class Investments(commands.Cog):
 
     @invest_group.command(name="sell", description="Sell your owned shares")
     @app_commands.autocomplete(symbol=portfolio_autocomplete)
-    async def sell(self, interaction: "discord.Interaction", symbol: str, shares: int):
+    async def sell(self, interaction: discord.Interaction, symbol: str, shares: int):
         if shares <= 0: return await interaction.response.send_message("❌ Invalid amount.", ephemeral=True)
         sym = symbol.upper()
         
@@ -341,7 +341,7 @@ class Investments(commands.Cog):
         await interaction.response.send_message(f"<:stockmarket1:1503803937000521971> **Trade Executed!**\nSold **{shares:,}** shares of **{stock[1]}** for **A$ {total_value:,}**.\n**Trade P/L:** `{profit_str}`")
 
     @invest_group.command(name="portfolio", description="View your investments and real-time performance")
-    async def portfolio(self, interaction: "discord.Interaction"):
+    async def portfolio(self, interaction: discord.Interaction):
         with get_db_cursor() as cursor:
             cursor.execute('''SELECT p.symbol, p.shares, p.average_buy_price, s.price, s.name 
                               FROM portfolio p JOIN stocks s ON p.symbol = s.symbol 
