@@ -395,15 +395,15 @@ class Marketplace(commands.Cog):
             except: pass
 
             vehicles = [
-                ('CAR1', 'Mini Cooper S', 15000, 20),
-                ('CAR2', 'Land Rover Defender', 45000, 30),
-                ('CAR3', 'Jaguar F-Type', 95000, 35),
-                ('CAR4', 'Aston Martin DB12', 185000, 40),
-                ('CAR5', 'Chevrolet Corvette ZR1', 195000, 45),
-                ('CAR6', 'Rolls-Royce Cullinan', 250000, 50),
-                ('CAR7', 'Ferrari SF90 Stradale', 320000, 60)
+                ('CAR1', 'Mini Cooper S', 15000, 20, 'Car'),
+                ('CAR2', 'Land Rover Defender', 45000, 30, 'Car'),
+                ('CAR3', 'Jaguar F-Type', 95000, 35, 'Car'),
+                ('CAR4', 'Aston Martin DB12', 185000, 40, 'Car'),
+                ('CAR5', 'Chevrolet Corvette ZR1', 195000, 45, 'Car'),
+                ('CAR6', 'Rolls-Royce Cullinan', 250000, 50, 'Car'),
+                ('CAR7', 'Ferrari SF90 Stradale', 320000, 60, 'Car')
             ]
-            cursor.executemany("INSERT OR REPLACE INTO market_vehicles VALUES (?, ?, ?, ?)", vehicles)
+            cursor.executemany("INSERT OR REPLACE INTO market_vehicles VALUES (?, ?, ?, ?, ?)", vehicles)
 
             yachts_and_planes = [
                 ('YACHT1', 'Sunseeker Predator 84', 15000000, 0, 'Yacht'),

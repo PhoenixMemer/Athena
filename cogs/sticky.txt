@@ -1,0 +1,64 @@
+@bot.command(name="help")
+async def help_command(ctx):
+    embed = discord.Embed(title="𝐴𝑡ℎ𝑒𝑛𝑎 𝐶𝑜𝑚𝑚𝑎𝑛𝑑 𝑀𝑒𝑛𝑢", color=0xffffff)
+
+    # Utility Commands
+    utility_commands = """
+<:p_hearts:1378053399525982288> `ping` - Check bot latency
+<:p_hearts:1378053399525982288> `afk` - Set your status as AFK
+<:p_hearts:1378053399525982288> `remind` - Set a reminder (e.g., a.remind 1h30m Buy milk)
+<:p_hearts:1378053399525982288> `reminders` - List your active reminders
+<:p_hearts:1378053399525982288> `removereminder` - Remove a reminder by ID
+<:p_hearts:1378053399525982288> `vanityinfo` - Show members with vanity role
+"""
+    embed.add_field(name="<:s_white2:1382052523166142486> Utility Commands", value=utility_commands, inline=False)
+
+    # Social Commands
+    social_commands = """
+<:p_hearts:1378053399525982288> `compat` - Check compatibility between users
+<:p_hearts:1378053399525982288> `love` - Love calculator between users
+<:p_hearts:1378053399525982288> `mbti` - Get personality insights
+<:p_hearts:1378053399525982288> `romantic` - Detailed romantic compatibility
+"""
+    embed.add_field(name="<:s_white2:1382052523166142486> Social Commands", value=social_commands, inline=False)
+
+    # Vanity System
+    vanity_text = """
+<:p_hearts:1378053399525982288> Rep `/cheriies` in your status to get:
+• Special vanity role
+• Recognition in the community
+• Exclusive perks!
+"""
+    embed.add_field(name="<:s_white2:1382052523166142486> Vanity System", value=vanity_text, inline=False)
+
+    # NEW: Economy Commands
+    economy_commands = """
+<:p_hearts:1378053399525982288> `bal` - Check your wallet & card
+<:p_hearts:1378053399525982288> `work` - Earn coins (Commute bonus applies)
+<:p_hearts:1378053399525982288> `daily` - Claim your daily allowance
+<:p_hearts:1378053399525982288> `give` - Transfer coins to another user
+<:p_hearts:1378053399525982288> `loan` - Take a loan from the Reserve
+<:p_hearts:1378053399525982288> `stake` - Lock capital for high yields
+<:p_hearts:1378053399525982288> `invest` - Buy/Sell stocks & view yields
+<:p_hearts:1378053399525982288> `marketplace` - Buy houses & luxury cars
+<:p_hearts:1378053399525982288> `garage` - View your vehicle collection
+<:p_hearts:1378053399525982288> `networth` - Total valuation of your empire
+<:p_hearts:1378053399525982288> `leaderboard` - Top 10 wealthiest users
+<:p_hearts:1378053399525982288> `casino` - Access 11 VIP gambling tables
+<:p_hearts:1378053399525982288> `convert` - Mimu to Athena calculator
+"""
+    embed.add_field(name="<:s_white2:1382052523166142486> Economy Commands", value=economy_commands, inline=False)
+
+    # Staff Commands
+    staff_commands = """
+<:p_hearts:1378053399525982288> `createprofile` - Create your mod user profile
+<:p_hearts:1378053399525982288> `training` - Begin your staff training modules
+<:p_hearts:1378053399525982288> `modinfo` - View detailed moderator info
+<:p_hearts:1378053399525982288> `loa` - Toggle your LOA status on/off
+<:p_hearts:1378053399525982288> `staffview` - View all current staff
+<:p_hearts:1378053399525982288> `commend` - Commend a mod for excellent work
+"""
+    embed.add_field(name="<:s_white2:1382052523166142486> Staff Commands", value=staff_commands, inline=False)
+
+    embed.set_footer(text="Athena v16.3 UNSTABLE | Use slash commands or a. prefix")
+    await ctx.send(embed=embed)

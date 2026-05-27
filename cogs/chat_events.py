@@ -44,7 +44,7 @@ class DropClaimView(discord.ui.View):
         self.claimed_users = set()
         self.max_claims = 4
 
-    @discord.ui.button(label="Snatch the Bag!", style=discord.ButtonStyle.primary)
+    @discord.ui.button(label="Snatch the Bag!", style=discord.ButtonStyle.green, emoji="<a:torosilly:1509258779617919086>")
     async def claim_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id in self.claimed_users:
             return await interaction.response.send_message("You already grabbed a cut from this bag!", ephemeral=True)
@@ -112,10 +112,9 @@ class ChatEvents(commands.Cog):
             
         embed = discord.Embed(
             title="꒰ა A Wild Cash Drop Appeared! ⸝⸝",
-            description="A bag of unmarked bills just fell from an armored truck!\nQuickly get your cut!!",
+            description="A bag of unmarked bills just fell from an armored truck!",
             color=0xffffff
         )
-        embed.set_footer(text="Athena Central Reserve")
         
         view = DropClaimView()
         await channel.send(embed=embed, view=view)
@@ -181,7 +180,7 @@ class ChatEvents(commands.Cog):
                 ephemeral=True
             )
 
-    @app_commands.command(name="lottery", description="Buy a lottery ticket for the 8-hour draw")
+    @app_commands.command(name="buyticket", description="Buy a lottery ticket for the 8-hour draw")
     async def lottery_buy(self, interaction: discord.Interaction):
         with get_db_cursor() as c:
             c.execute("SELECT balance FROM wallets WHERE user_id = ?", (interaction.user.id,))

@@ -1304,42 +1304,6 @@ class Business(commands.Cog):
                 else: await channel.send(embed=embed)
             except: pass
 
-    @app_commands.command(name="bizhelp", description="View the bot's command help")
-    async def help_cmd(self, i: discord.Interaction):
-        """Displays a modal with all commands"""
-        embed = discord.Embed(title="Athena Business Command Help", color=0xffffff)
-        embed.description = "Here's a list of all available commands:"
-        
-        commands_list = [
-            ("business", "Access your business terminal"),
-            ("appoint", "Appoint a VP"),
-            ("rename_company", "Rename your company"),
-            ("set_banner", "Set the newspaper banner"),
-            ("bizleaderboard", "View the top companies"),
-            ("lottery", "Enter the daily lottery"),
-            ("pick", "Pick a random item for a reward"),
-            ("audit", "Run a business audit"),
-            ("market", "View stock market prices"),
-            ("buy", "Buy stocks"),
-            ("sell", "Sell stocks"),
-            ("portfolio", "View your investment portfolio"),
-            ("heist", "Attempt a corporate heist"),
-            ("daily", "Claim your daily allowance"),
-            ("work", "Work at your job to earn money"),
-            ("stake", "Stake money for guaranteed returns"),
-            ("invest", "Invest in the stock market"),
-            ("convert", "Convert between Mimu and Athena coins"),
-            ("statement", "View your transaction history")
-        ]
-        
-        for name, desc in commands_list:
-            embed.add_field(name=f"/{name}", value=desc, inline=False)
-        
-        embed.set_footer(text="Use /business to start your business journey!")
-        view = discord.ui.View()
-        view.add_item(discord.ui.Button(label="Close", style=discord.ButtonStyle.danger, custom_id="close_help"))
-        await i.response.send_message(embed=embed, view=view)
-
     @app_commands.command(name="guidebiz", description="Read the official Athena Business Manual")
     async def bizguide(self, i: discord.Interaction):
         pages = []
