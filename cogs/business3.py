@@ -1002,11 +1002,11 @@ class TerminalView(discord.ui.View):
     async def hr(self, i: discord.Interaction, btn):
         with get_db_cursor() as c:
             emps = c.execute("SELECT name, salary, morale, specialization FROM employees WHERE user_id = ?", (i.user.id,)).fetchall()
-        embed = discord.Embed(title="꒰ა ﹒chérie  ⸝⸝", color=0xffffff)
+        embed = discord.Embed(title="꒰ა Human Resources ⸝⸝", color=0xffffff)
         if not emps: 
             embed.description = "No employees."
         else:
-            desc = "👥 **Human Resources**\n"
+            desc = ""
             for n,s,m,sp in emps[:15]:
                 desc += f"• **{n}** ({sp}) - A$ {s:,} | {m}% morale\n"
             if len(emps) > 15: desc += f"*...and {len(emps)-15} more.*\n"
@@ -1082,7 +1082,7 @@ class TerminalView(discord.ui.View):
         now = time.time()
         if biz[6] and (now - biz[6]) < 14400:
             rem = int(14400 - (now - biz[6]))
-            return await i.response.send_message(f"⏱️ Your corporate consultants are currently analyzing data. Come back in **{rem // 3600}h {(rem % 3600)//60}m**.", ephemeral=True)
+            return await i.response.send_message(f"<a:wt_toronerd:1480580983593111602> Your corporate consultants are currently analyzing data. Come back in **{rem // 3600}h {(rem % 3600)//60}m**.", ephemeral=True)
             
         with get_db_cursor() as c:
             c.execute("UPDATE businesses SET last_audit = ? WHERE user_id = ?", (now, self.user_id))
@@ -1095,9 +1095,9 @@ class TerminalView(discord.ui.View):
         advice = []
         
         if biz[5] == 1 or avg_morale < 20:
-            advice.append("🚨 **CRITICAL: Worker Strike Active!** Morale is critically low (below 20%). Production is halted. Use the HR terminal to host an event immediately or settle the strike, otherwise your business will continue to bleed capital.")
+            advice.append("<a:013Pink_Cat2:1390454131734347989> **CRITICAL: Worker Strike Active!** Morale is critically low (below 20%). Production is halted. Use the HR terminal to host an event immediately or settle the strike, otherwise your business will continue to bleed capital.")
         elif avg_morale < 25:
-            advice.append("⚠️ **Warning: Low Morale.** Workers are unhappy (below 25%). A strike will occur if it drops below 20%. Invest in HR events to boost morale.")
+            advice.append("<a:013Pink_Caution:1509406197323923729> **Warning: Low Morale.** Workers are unhappy (below 25%). A strike will occur if it drops below 20%. Invest in HR events to boost morale.")
         
         if not prods:
             advice.append("📦 **No Products:** You aren't producing anything. Launch a product in the Operations terminal to generate revenue.")
@@ -1108,9 +1108,9 @@ class TerminalView(discord.ui.View):
             factory_cap = int((emp_count * 50) * eng_mult) 
             
             if total_target > (factory_cap * 1.5):
-                advice.append(f"⚠️ **Overproduction:** Your Daily Targets (approx {total_target:,}) vastly exceed your factory's capacity (approx {factory_cap:,}). You are paying baseline costs for units you physically cannot build. Lower your targets or hire more staff.")
+                advice.append(f"<a:013Pink_Caution:1509406197323923729> **Overproduction:** Your Daily Targets (approx {total_target:,}) vastly exceed your factory's capacity (approx {factory_cap:,}). You are paying baseline costs for units you physically cannot build. Lower your targets or hire more staff.")
             elif factory_cap > (total_target * 2):
-                advice.append(f"⚠️ **Understaffed:** You have {emp_count} employees but low production targets. You are wasting capital on payroll for idle workers. Fire staff or increase production targets.")
+                advice.append(f"<a:013Pink_Caution:1509406197323923729> **Understaffed:** You have {emp_count} employees but low production targets. You are wasting capital on payroll for idle workers. Fire staff or increase production targets.")
             
             for p in prods:
                 tier_data = QUALITY_TIERS.get(p[4], QUALITY_TIERS['Standard'])
@@ -1118,25 +1118,25 @@ class TerminalView(discord.ui.View):
                 margin = p[1] / max(1, adj_cost)
                 
                 if margin > 4.0:
-                    advice.append(f"🟥 **SEVERE OVERPRICING:** Your product **{p[0]}** is marked up by over 400%. You are losing 95% of your sales volume to buyer boycotts. Edit the price down immediately.")
+                    advice.append(f"<:h_gray:1408478249625059328> **SEVERE OVERPRICING:** Your product **{p[0]}** is marked up by over 400%. You are losing 95% of your sales volume to buyer boycotts. Edit the price down immediately.")
                 elif margin > 2.5:
-                    advice.append(f"🟧 **High Price:** Your product **{p[0]}** is marked up over 2.5x. You are losing 70% of potential sales. Consider lowering to the 'Sweet Spot' (2.5x base cost).")
+                    advice.append(f"<:h_gray:1408478249625059328> **High Price:** Your product **{p[0]}** is marked up over 2.5x. You are losing 70% of potential sales. Consider lowering to the 'Sweet Spot' (2.5x base cost).")
                 elif margin > 1.5:
-                    advice.append(f"🟨 **Good Pricing:** Your product **{p[0]}** is priced well. Consider increasing production to maximize revenue.")
+                    advice.append(f"<:h_gray:1408478249625059328> **Good Pricing:** Your product **{p[0]}** is priced well. Consider increasing production to maximize revenue.")
                 else:
-                    advice.append(f"🟩 **Underpricing:** Your product **{p[0]}** is priced too low. You're missing out on potential profit. Consider increasing the price slightly.")
+                    advice.append(f"<:h_gray:1408478249625059328> **Underpricing:** Your product **{p[0]}** is priced too low. You're missing out on potential profit. Consider increasing the price slightly.")
         
         if biz[0] < 50000:
-            advice.append("📉 **Critical Capital Shortage:** Your liquid capital is dangerously low (below A$ 50,000). Consider injecting personal funds to stay afloat.")
+            advice.append("<a:013Pink_Cat3:1509406633992917146> **Critical Capital Shortage:** Your liquid capital is dangerously low (below A$ 50,000). Consider injecting personal funds to stay afloat.")
         elif biz[0] < 100000:
-            advice.append("⚠️ **Low Capital:** Your liquid capital is low (below A$ 100,000). Consider injecting personal funds to maintain operations.")
+            advice.append("<a:013Pink_Caution:1509406197323923729> **Low Capital:** Your liquid capital is low (below A$ 100,000). Consider injecting personal funds to maintain operations.")
         
         if biz[1] > 0:
             debt_ratio = biz[1] / biz[0]
             if debt_ratio > 0.5:
-                advice.append("⚠️ **High Debt Ratio:** Your debt is more than 50% of your capital. Consider paying down debt to improve your financial stability.")
+                advice.append("<a:013Pink_Caution:1509406197323923729> **High Debt Ratio:** Your debt is more than 50% of your capital. Consider paying down debt to improve your financial stability.")
             elif debt_ratio > 0.25:
-                advice.append("⚠️ **Moderate Debt:** Your debt is more than 25% of your capital. Monitor your debt levels closely.")
+                advice.append("<a:013Pink_Caution:1509406197323923729> **Moderate Debt:** Your debt is more than 25% of your capital. Monitor your debt levels closely.")
         
         tax_rate = 0.0
         country = biz[7] or 'USA'
@@ -1147,46 +1147,46 @@ class TerminalView(discord.ui.View):
             else:
                 break
         if tax_rate > 0.15:
-            advice.append(f"⚠️ **High Tax Burden:** Your country's tax rate is {tax_rate*100:.1f}%. Consider expanding into countries with lower tax rates or optimizing your business structure to reduce your tax burden.")
+            advice.append(f"<a:013Pink_Cat2:1390454131734347989> **High Tax Burden:** Your country's tax rate is {tax_rate*100:.1f}%. Consider expanding into countries with lower tax rates or optimizing your business structure to reduce your tax burden.")
         
         if tech_level < 10:
-            advice.append(f"⚠️ **Underutilized R&D:** Your tech level is low ({tech_level}). Invest in R&D to unlock higher production efficiency and premium products.")
+            advice.append(f"<a:013Pink_Cat2:1390454131734347989> **Underutilized R&D:** Your tech level is low ({tech_level}). Invest in R&D to unlock higher production efficiency and premium products.")
         
         if biz[8] < 5000:
-            advice.append(f"💡 **Marketing Opportunity:** Your marketing budget is low (A$ {biz[8]:,}). Consider investing in marketing to boost demand for your products.")
+            advice.append(f"<a:013Pink_Cat3:1509406633992917146> **Marketing Opportunity:** Your marketing budget is low (A$ {biz[8]:,}). Consider investing in marketing to boost demand for your products.")
         
         if biz[0] < 0:
-            advice.append("🟥 **Negative Profit:** Your business is operating at a loss. Reassess your pricing, costs, and production targets immediately.")
+            advice.append("<a:013Pink_Caution:1509406197323923729> **Negative Profit:** Your business is operating at a loss. Reassess your pricing, costs, and production targets immediately.")
         
         if biz[2] < 50:
-            advice.append(f"⚠️ **Low Reputation:** Your brand reputation is low ({biz[2]}%). Consider investing in quality improvements and customer service to boost your reputation.")
+            advice.append(f"<a:013Pink_Caution:1509406197323923729> **Low Reputation:** Your brand reputation is low ({biz[2]}%). Consider investing in quality improvements and customer service to boost your reputation.")
         
         if emp_count > 0 and avg_morale < 70:
-            advice.append(f"⚠️ **High Employee Turnover Risk:** Employee morale is low ({avg_morale}%). Consider hosting HR events to improve morale and reduce turnover.")
+            advice.append(f"<a:013Pink_Caution:1509406197323923729> **High Employee Turnover Risk:** Employee morale is low ({avg_morale}%). Consider hosting HR events to improve morale and reduce turnover.")
         
         if tech_level > 10 and not any(p[4] == 'Premium' or p[4] == 'Luxury' for p in prods):
-            advice.append(f"💡 **Underutilized Tech:** You have high tech level ({tech_level}) but aren't producing premium or luxury products. Consider upgrading your products to unlock higher margins.")
+            advice.append(f"<a:013Pink_Cat3:1509406633992917146> **Underutilized Tech:** You have high tech level ({tech_level}) but aren't producing premium or luxury products. Consider upgrading your products to unlock higher margins.")
         
         if country == 'China':
-            advice.append("💡 **China Specific Opportunity:** Consider leveraging China's manufacturing advantages for cost-efficient production. However, be aware of potential trade restrictions.")
+            advice.append("<a:013Pink_Cat2:1390454131734347989> **China Specific Opportunity:** Consider leveraging China's manufacturing advantages for cost-efficient production. However, be aware of potential trade restrictions.")
         elif country == 'USA':
-            advice.append("💡 **USA Specific Opportunity:** Leverage the strong US market for premium products. Consider expanding into other Western markets for growth.")
+            advice.append("<a:013Pink_Cat2:1390454131734347989> **USA Specific Opportunity:** Leverage the strong US market for premium products. Consider expanding into other Western markets for growth.")
         elif country == 'Germany':
-            advice.append("💡 **Germany Specific Opportunity:** Germany is known for high-quality manufacturing. Consider positioning your brand as premium to leverage this reputation.")
+            advice.append("<a:013Pink_Cat2:1390454131734347989> **Germany Specific Opportunity:** Germany is known for high-quality manufacturing. Consider positioning your brand as premium to leverage this reputation.")
         elif country == 'Vietnam':
-            advice.append("💡 **Vietnam Specific Opportunity:** Vietnam offers low labor costs. Consider outsourcing production to Vietnam to reduce costs.")
+            advice.append("<a:013Pink_Cat2:1390454131734347989> **Vietnam Specific Opportunity:** Vietnam offers low labor costs. Consider outsourcing production to Vietnam to reduce costs.")
         elif country == 'UK':
-            advice.append("💡 **UK Specific Opportunity:** The UK has strong intellectual property protections. Consider registering patents here for your innovations.")
+            advice.append("<a:013Pink_Cat2:1390454131734347989> **UK Specific Opportunity:** The UK has strong intellectual property protections. Consider registering patents here for your innovations.")
         elif country == 'France':
-            advice.append("💡 **France Specific Opportunity:** France has strong luxury brand recognition. Consider positioning your products as premium luxury goods.")
+            advice.append("<a:013Pink_Cat2:1390454131734347989> **France Specific Opportunity:** France has strong luxury brand recognition. Consider positioning your products as premium luxury goods.")
         elif country == 'Brazil':
-            advice.append("💡 **Brazil Specific Opportunity:** Brazil has a large domestic market. Consider focusing on local market penetration before expanding globally.")
+            advice.append("<a:013Pink_Cat2:1390454131734347989> **Brazil Specific Opportunity:** Brazil has a large domestic market. Consider focusing on local market penetration before expanding globally.")
         
         if not advice:
             advice.append("🟩 **Optimal Operations:** Your pricing, staffing, and morale look perfectly balanced! Keep up the good work, CEO.")
             
         embed = discord.Embed(title="ა Firm Analysis & Audit ⸝⸝", color=0xffffff)
-        embed.description = "The corporate consultants have reviewed your operations:\n\n" + "\n\n".join(advice)
+        embed.description = "The Israeli corporate consultants have reviewed your operations:\n\n" + "\n\n".join(advice)
         embed.set_footer(text="Next audit available in 4 hours.")
         
         await i.response.send_message(embed=embed, ephemeral=True)

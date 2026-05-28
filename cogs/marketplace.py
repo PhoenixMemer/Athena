@@ -269,8 +269,8 @@ class MarketplaceDropdown(discord.ui.Select):
                 for lid, name, price, seller_id in listings:
                     seller = interaction.guild.get_member(seller_id) if interaction.guild else None
                     s_name = seller.name if seller else "Inactive User"
-                    desc += f"**{name}** `[Listing #{lid}]`\n"
-                    desc += f"**Seller:** {s_name}\n"
+                    desc += f"**<a:014White_Heart2:1509413123810136196> {name}** `[Listing #{lid}]`\n"
+                    desc += f"**<a:014White_Heart2:1509413123810136196> Seller:** {s_name}\n"
                     desc += f"<:athenacoin:1503804322280902767> **Price:** A$ {price:,}\n\n"
                 embed.description = desc if listings else "The trading floor is currently empty. List your properties with `/marketplace list`!"
                 
@@ -281,8 +281,8 @@ class MarketplaceDropdown(discord.ui.Select):
                 embed = discord.Embed(title=f"{category} Showroom", color=0xffffff)
                 desc = "Luxury assets. Owning these boosts prestige (will soon have perks for businesses)\n\n"
                 for vid, name, price, bonus in vehicles:
-                    desc += f"**{name}** `[{vid}]`\n"
-                    if bonus > 0: desc += f"**Commute Bonus:** -{bonus}m On Work Cooldown\n"
+                    desc += f"<a:014White_Heart2:1509413123810136196> **{name}** `[{vid}]`\n"
+                    if bonus > 0: desc += f"<a:014White_Heart2:1509413123810136196> **Commute Bonus:** -{bonus}m On Work Cooldown\n"
                     desc += f"<:athenacoin:1503804322280902767> **Price:** A$ {price:,}\n\n"
                 embed.description = desc
 
@@ -294,8 +294,8 @@ class MarketplaceDropdown(discord.ui.Select):
                 embed = discord.Embed(title="Athena Showroom", color=0xffffff)
                 desc = "Luxury vehicles. Owning these reduces your `/work` cooldown.\n\n"
                 for vid, name, price, bonus in vehicles:
-                    desc += f"**{name}** `[{vid}]`\n"
-                    desc += f"**Commute Bonus:** -{bonus}m On Work Cooldown\n"
+                    desc += f"<a:014White_Heart2:1509413123810136196> **{name}** `[{vid}]`\n"
+                    desc += f"**<a:014White_Heart2:1509413123810136196> Commute Bonus:** -{bonus}m On Work Cooldown\n"
                     desc += f"<:athenacoin:1503804322280902767> **Price:** A$ {price:,}\n\n"
                 embed.description = desc
                 
@@ -305,8 +305,8 @@ class MarketplaceDropdown(discord.ui.Select):
                 embed = discord.Embed(title=f"{category} Real Estate", color=0xffffff)
                 desc = "Available deeds. Click **Buy** below to purchase.\n\n"
                 for pid, name, price, rent in properties:
-                    desc += f"**{name}** `[{pid}]`\n"
-                    desc += f"**Price:** A$ {price:,}\n"
+                    desc += f"<a:014White_Heart2:1509413123810136196> **{name}** `[{pid}]`\n"
+                    desc += f"**<a:014White_Heart2:1509413123810136196> Price:** A$ {price:,}\n"
                     desc += f"<:athenacoin:1503804322280902767> **Base Rent:** A$ {rent:,} / day\n\n"
                 embed.description = desc
 

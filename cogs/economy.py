@@ -648,14 +648,14 @@ class Economy(commands.Cog):
                 log_transaction(cursor, interaction.user.id, stolen_amount, "ROB_SUCCESS", f"Robbed {target.name}")
                 log_transaction(cursor, target.id, -stolen_amount, "ROBBED", f"Robbed by {interaction.user.name}")
                 embed = discord.Embed(title="꒰ა The Heist was a Success! ⸝⸝", color=0xffffff)
-                embed.description = f"You slipped past security and successfully robbed **{target.mention}**!\n\n**Stolen:** A$ {stolen_amount:,}"
+                embed.description = f"<a:013Pink_Cat3:1390455852615340162> You slipped past security and successfully stole A$ {stolen_amount:,} from {target.mention}!"
                 await interaction.followup.send(embed=embed)
             else:
                 fine = max(500, int(robber_bal * 0.20))
                 atomic_balance_update(cursor, interaction.user.id, -fine)
                 log_transaction(cursor, interaction.user.id, -fine, "ROB_FAIL", f"Caught trying to rob {target.name}")
                 embed = discord.Embed(title="꒰ა Busted! ⸝⸝", color=0xffffff)
-                embed.description = f"You were caught trying to rob **{target.mention}**!\n\nFined **A$ {fine:,}**."
+                embed.description = f"<:014White_BearLaugh:1265569134863974462> You were caught trying to rob **{target.mention}** and have been fined **A$ {fine:,}**!"
                 await interaction.followup.send(embed=embed)
 
     @app_commands.command(name="daily", description="Claim your daily Athena Reserve allowance")

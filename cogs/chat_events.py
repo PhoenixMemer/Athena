@@ -174,11 +174,9 @@ class ChatEvents(commands.Cog):
         time_since_drop = now - last_drop
         
         # Force drop if it's been over 2 hours, regardless of chat activity
-        force_drop = time_since_drop > 1 #7200  
-        # Drop if chat is active and it's been at least 20 minutes
-        active_drop = time_since_drop > 1200 and await self.is_chat_active(channel, 600) 
+        force_drop = time_since_drop > 7200
         
-        if force_drop or active_drop:
+        if force_drop:
             # Create a view that allows 3 claims, each between A$400 and A$1500
             view = DropClaimView(total_claims=3, min_amount=800, max_amount=1500)
             

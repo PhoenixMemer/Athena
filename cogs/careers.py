@@ -360,7 +360,7 @@ class Careers(commands.Cog):
             "**<:s_white2:1382052523166142486> Air Force:** Airman > Staff Sergeant > Fighter Pilot > Wing Commander\n\n"
             "*Note: Once you choose a career, you must reach the MAX level to switch it!*"
         )
-        embed.set_image(url="https://media.discordapp.net/attachments/1375079530183790744/1501577920270041199/2227dbca3d307d172781fdb78c85f5ae.jpg?ex=6a01daea&is=6a00896a&hm=b7ae30d45a5a48da6327d1fe629ee924e09036c2aacae1ee55644c776f125881&&format=webp&width=1008&height=336")
+        embed.set_image(url="https://i.pinimg.com/1200x/01/b9/0e/01b90ed975824daa7f09ea32fe3b9013.jpg")
         await interaction.edit_original_response(content=None, embed=embed, view=CareerView())
 
     @app_commands.command(name="work", description="Work a shift at your job to earn A$ and XP")

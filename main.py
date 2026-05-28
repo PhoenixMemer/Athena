@@ -40,6 +40,7 @@ initial_extensions = [
     'cogs.casino',
     'cogs.help',
     'cogs.business3',
+    'cogs.bug_reports',
     'cogs.invest',
     'cogs.chat_events',
     'cogs.careers',
