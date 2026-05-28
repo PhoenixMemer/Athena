@@ -923,7 +923,7 @@ async def get_dashboard(bot, user_id):
     embed.set_image(url=banner_url)
     embed.set_footer(text="Athena Central Reserve | Pending Taxes: %40 of Capital")
     
-    return embed, TerminalView(bot)
+    return embed, TerminalView(bot, user_id)
 
 
 class TerminalView(discord.ui.View):
@@ -1193,7 +1193,11 @@ class TerminalView(discord.ui.View):
         
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message("<a:wt_torono:1480580892706603018> Access Denied. This is classified corporate data.", ephemeral=True)
+            try:
+                await interaction.response.send_message("<a:wt_torono:1480580892706603018> Access Denied. This is classified corporate data.", ephemeral=True)
+            except discord.NotFound:
+        # Interaction already expired – user would have seen nothing, but we don't crash
+                pass
             return False
             
         if interaction.data.get('custom_id') == "strike_btn":
@@ -1331,7 +1335,8 @@ class Business(commands.Cog):
             ("businesses", "next_board_meeting", "REAL DEFAULT 0"), 
             ("businesses", "strike_active", "INTEGER DEFAULT 0"),
             ("business_products", "category", "TEXT"), 
-            ("business_products", "quality_tier", "TEXT DEFAULT 'Standard'")
+            ("business_products", "quality_tier", "TEXT DEFAULT 'Standard'"),
+            ("businesses", "country", "TEXT DEFAULT 'USA'")
         ]:
             try: c.execute(f"ALTER TABLE {table} ADD COLUMN {col} {dtype}")
             except: pass
@@ -1603,7 +1608,7 @@ class Business(commands.Cog):
         overhead = int((10000 + emp_count * 500) * aud_mult)
         loan_pay = biz['loan_balance'] // max(1, biz['installments_left']) if biz['installments_left'] > 0 else 0
         exec_pay = biz['owner_salary'] * (2 if biz['vp_id'] else 1)
-        total_exp = total_payroll + overhead + tot_cost + loan_pay + exec_pay + (biz['marketing_budget'] * 2)
+        total_exp = total_payroll + overhead + tot_cost + loan_pay + exec_pay
         
         net_profit = int(tot_rev - total_exp)
         

@@ -7,7 +7,7 @@ import time
 from contextlib import contextmanager
 
 DB_PATH = "economy.db"
-GENERAL_CHANNEL_ID = 1126516721952497756  # ⚠️ REPLACE WITH YOUR ACTUAL GENERAL CHAT CHANNEL ID
+GENERAL_CHANNEL_ID = 1441473281420169367 
 
 @contextmanager
 def get_db_cursor():
@@ -38,31 +38,83 @@ def atomic_balance_update(cursor, user_id: int, delta: int) -> bool:
     cursor.execute("UPDATE wallets SET balance = ? WHERE user_id = ? AND balance = ?", (new_balance, user_id, old_balance))
     return cursor.rowcount > 0
 
-class DropClaimView(discord.ui.View):
-    def __init__(self, amount: int):
-        super().__init__(timeout=120)
-        self.amount = amount
-        self.claimed = False
 
-    @discord.ui.button(label="Snatch the Bag!", style=discord.ButtonStyle.primary, emoji="<a:torosilly:1509258779617919086>")
+class DropClaimView(discord.ui.View):
+    """View for cash drops – allows up to 3 claims with random amounts per claim."""
+    
+    def __init__(self, total_claims: int = 3, min_amount: int = 500, max_amount: int = 2000):
+        super().__init__(timeout=120)  # 2 minutes to claim
+        self.total_claims = total_claims
+        self.claims_made = 0
+        self.min_amount = min_amount
+        self.max_amount = max_amount
+        self.claimed_users = set()  # Optional: prevent same user claiming twice
+
+    async def update_drop_message(self, interaction: discord.Interaction, amount: int):
+        """Edits the original embed to show remaining claims."""
+        embed = interaction.message.embeds[0] if interaction.message.embeds else discord.Embed(title="꒰ა Cash Drop ⸝⸝", color=0xffffff)
+        remaining = self.total_claims - self.claims_made
+        
+        embed.description = (
+            f"<a:013Pink_Cat2:1509374529926070372> A bag of unmarked bills just fell from an armored truck! <a:013Pink_Cat2:1509374529926070372>\n\n"
+            f"**{self.claims_made}/{self.total_claims}** claims used.\n"
+            f"Remaining drops: **{remaining}**\n\n"
+            f"*<a:c_wip:1413158107856502874> Last claim:* {interaction.user.mention} got <:athenacoin:1503804322280902767> **A$ {amount:,}**"
+        )
+        await interaction.message.edit(embed=embed)
+
+    @discord.ui.button(label="Snatch the Bag!", style=discord.ButtonStyle.secondary, emoji="<a:torosilly:1509258779617919086>")
     async def claim_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if self.claimed:
-            return await interaction.response.send_message("Too slow! Someone already grabbed this.", ephemeral=True)
+        # 1. Check if drop is already fully claimed
+        if self.claims_made >= self.total_claims:
+            return await interaction.response.send_message(
+                "**Too late!** All three money bags have been snatched already.", 
+                ephemeral=True
+            )
         
-        self.claimed = True
-        button.disabled = True
-        button.label = "Claimed!"
+        # 2. Optional: prevent the same user from claiming twice in the same drop
+        if interaction.user.id in self.claimed_users:
+            return await interaction.response.send_message(
+                "You already claimed from this drop! Let others have a chance.", 
+                ephemeral=True
+            )
         
+        # 3. Generate random amount for this claim
+        amount = random.randint(self.min_amount, self.max_amount)
+        
+        # 4. Award the money
         with get_db_cursor() as db:
             db.execute("INSERT OR IGNORE INTO wallets (user_id, balance, active_card, highest_balance) VALUES (?, 0, 'silver', 0)", (interaction.user.id,))
-            atomic_balance_update(db, interaction.user.id, self.amount)
-            
+            atomic_balance_update(db, interaction.user.id, amount)
+        
+        # 5. Update state
+        self.claims_made += 1
+        self.claimed_users.add(interaction.user.id)
+        
+        # 6. If all claims are used, disable the button
+        if self.claims_made >= self.total_claims:
+            button.disabled = True
+            button.label = "All Claimed!"
+        
+        # 7. Update the embed with remaining claims
+        await self.update_drop_message(interaction, amount)
+        
+        # 8. Acknowledge the claim in the channel (public)
+        await interaction.channel.send(
+            f"<a:torosilly:1509258779617919086> **{interaction.user.mention}** claimed **A$ {amount:,}** from the drop! "
+            f"({self.claims_made}/{self.total_claims} claims used)"
+        )
+        
+        # 9. Acknowledge the button interaction (ephemeral)
         try:
-            await interaction.response.edit_message(view=self)
-        except discord.HTTPException:
+            await interaction.response.send_message(
+                f"You snatched **A$ {amount:,}**!! Congrats <a:wt_torocellphone:1503815758730366976>", 
+                ephemeral=True
+            )
+        except discord.NotFound:
+            # Interaction already acknowledged by something else – ignore
             pass
-            
-        await interaction.channel.send(f"<a:torosilly:1509258779617919086> **{interaction.user.mention}** snatched **A$ {self.amount:,}** from the drop!")
+
 
 class ChatEvents(commands.Cog):
     def __init__(self, bot):
@@ -116,23 +168,23 @@ class ChatEvents(commands.Cog):
         now = time.time()
         
         # ==========================================
-        # 💰 CASH DROP LOGIC
+        # 💰 CASH DROP LOGIC (Multi‑claim)
         # ==========================================
         last_drop = self.get_tracker('last_cash_drop')
         time_since_drop = now - last_drop
         
         # Force drop if it's been over 2 hours, regardless of chat activity
-        force_drop = time_since_drop > 7200  
+        force_drop = time_since_drop > 1 #7200  
         # Drop if chat is active and it's been at least 20 minutes
         active_drop = time_since_drop > 1200 and await self.is_chat_active(channel, 600) 
         
         if force_drop or active_drop:
-            amount = random.randint(800, 2500)
-            view = DropClaimView(amount)
+            # Create a view that allows 3 claims, each between A$400 and A$1500
+            view = DropClaimView(total_claims=3, min_amount=800, max_amount=1500)
             
             drop_embed = discord.Embed(
                 title="꒰ა A Wild Cash Drop Appeared! ⸝⸝",
-                description="A bag of unmarked bills just fell from an armored truck!",
+                description="<a:013Pink_Cat2:1509374529926070372> A bag of unmarked bills just fell from an armored truck!\n\n**0/3** claims used.",
                 color=0xffffff
             )
             await channel.send(embed=drop_embed, view=view)
@@ -166,6 +218,7 @@ class ChatEvents(commands.Cog):
                         description=f"**{winner_mention}** won the pot of **A$ {pot:,}**!\n\nThe next lottery cycle has started.",
                         color=0xffd700
                     )
+                    win_embed.set_footer(text=f"Total tickets sold: {len(tickets)}")
                     await channel.send(embed=win_embed)
                 else:
                     await channel.send("🎟️ **Lottery Draw:** No one bought tickets this round! The pot resets.")
@@ -182,7 +235,7 @@ class ChatEvents(commands.Cog):
         if time_since_draw >= 14400 and reminder_sent == 0:
             rem_embed = discord.Embed(
                 title="꒰ა Lottery Reminder! ⸝⸝",
-                description="Don't forget to buy your lottery tickets!\nUse `/lottery` to enter before the next draw.",
+                description="Don't forget to buy your lottery tickets! Use `/lottery` to enter before the next draw.\n\n**Cost:** A$ 500 per ticket\n**Next draw:** in 4 hours",
                 color=0xffffff
             )
             await channel.send(embed=rem_embed)
@@ -212,7 +265,7 @@ class ChatEvents(commands.Cog):
         if isinstance(error, app_commands.CommandOnCooldown):
             minutes = int(error.retry_after // 60)
             seconds = int(error.retry_after % 60)
-            await interaction.response.send_message(f"⏳ You've already scavenged recently. Try again in **{minutes}m {seconds}s**.", ephemeral=True)
+            await interaction.response.send_message(f"You've already scavenged recently. Try again in **{minutes}m {seconds}s**.", ephemeral=True)
 
     @app_commands.command(name="lottery", description="Buy a lottery ticket for the 8-hour draw (A$ 500)")
     async def lottery_buy(self, interaction: discord.Interaction):
@@ -222,7 +275,7 @@ class ChatEvents(commands.Cog):
             bal = bal_row[0] if bal_row else 0
             
             if bal < 500:
-                return await interaction.response.send_message("❌ You need at least A$ 500 to buy a ticket.", ephemeral=True)
+                return await interaction.response.send_message("❌ You need at least <:athenacoin:1503804322280902767> A$ 500 to buy a ticket.", ephemeral=True)
             
             db.execute("SELECT 1 FROM lottery_tickets WHERE user_id = ?", (interaction.user.id,))
             if db.fetchone():
@@ -231,7 +284,18 @@ class ChatEvents(commands.Cog):
             atomic_balance_update(db, interaction.user.id, -500)
             db.execute("INSERT OR REPLACE INTO lottery_tickets (user_id, timestamp) VALUES (?, ?)", (interaction.user.id, time.time()))
             
-        await interaction.response.send_message("🎟️ **Ticket Purchased!** You are entered into the next 8-hour draw.", ephemeral=True)
+        # Get current pot size for feedback
+        with get_db_cursor() as db:
+            db.execute("SELECT COUNT(*) FROM lottery_tickets")
+            ticket_count = db.fetchone()[0]
+            current_pot = ticket_count * 500
+            
+        embed = discord.Embed(
+            title="🎟️ Lottery Ticket Purchased!",
+            description=f"You entered the next 8‑hour draw.\n\n**Current jackpot:** A$ {current_pot:,}\n**Your ticket cost:** A$ 500",
+            color=0xffd700
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(ChatEvents(bot))

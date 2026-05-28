@@ -14,7 +14,7 @@ AI_API_KEY = os.getenv('AI_API_KEY')
 # Setup bot with multiple prefixes
 async def get_prefix(bot, message):
     """Return multiple prefixes that the bot should respond to"""
-    return commands.when_mentioned_or('a.', 'a!')(bot, message)
+    return commands.when_mentioned_or('a?', 'a!')(bot, message)
 
 # Set up the bot with multiple prefixes and all intents
 bot = commands.Bot(command_prefix=get_prefix, intents=discord.Intents.all())

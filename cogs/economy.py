@@ -161,14 +161,6 @@ async def apply_balance_increase(user_id: int, amount: int, channel: discord.Tex
             print(f"Balance update failed for user {user_id} after {max_retries} attempts")
             return None, None, None
 
-    if unlocked_name and channel:
-        embed = discord.Embed(title="꒰ა Rich Person Detected ⸝⸝", color=0xffffff)
-        embed.description = f"<@{user_id}>, your earnings pushed your balance to **A$ {final_bal:,}**.\nYou have unlocked and automatically equipped the **{unlocked_name}** card!"
-        try:
-            await channel.send(embed=embed)
-        except:
-            pass
-
     return final_bal, new_card, unlocked_name
 
 class StakingGuideView(discord.ui.View):
@@ -177,7 +169,7 @@ class StakingGuideView(discord.ui.View):
 
     @discord.ui.button(label="How does Staking work?", style=discord.ButtonStyle.secondary, emoji="🏦")
     async def guide_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        embed = discord.Embed(title="🏦 Athena Staking Guide", color=0xffffff)
+        embed = discord.Embed(title="Athena Staking Guide", color=0xffffff)
         embed.description = (
             "**Staking** is a risk-free way to grow your wealth over time.\n\n"
             "**1. Lock Your Funds**\nYou deposit a set amount of A$ into the Central Reserve for a fixed period (3, 7, or 14 days).\n\n"
@@ -405,62 +397,6 @@ class Economy(commands.Cog):
             channel = self.bot.get_channel(BUSINESS_CHANNEL_ID)
             await channel.send(f"<a:wt_torofly:1480580890185826364> **Central Reserve Lottery Winner!**\n<@{winner_id}> has won **A$ {prize:,}**!")
 
-    @app_commands.command(name="lottery", description="Sign up for the 8-hour Central Reserve Lottery")
-    async def lottery_signup(self, interaction: discord.Interaction):
-        with get_db_cursor() as c:
-            c.execute("INSERT OR IGNORE INTO lottery (user_id, timestamp) VALUES (?, ?)", (interaction.user.id, time.time()))
-            await interaction.response.send_message("Congrats!! You've entered the Central Reserve Lottery!", ephemeral=True)
-
-    @app_commands.command(name="rob", description="Attempt to rob another user. High risk, high reward.")
-    async def rob(self, interaction: discord.Interaction, target: discord.Member):
-        if target.id == interaction.user.id:
-            return await interaction.response.send_message("You cannot rob yourself.", ephemeral=True)
-        if target.bot:
-            return await interaction.response.send_message("You cannot rob a bot.", ephemeral=True)
-            
-        with get_db_cursor() as cursor:
-            now = time.time()
-            cooldown_duration = 3600
-            cursor.execute("SELECT last_used FROM command_cooldowns WHERE user_id = ? AND command_name = 'rob'", (interaction.user.id,))
-            row = cursor.fetchone()
-            
-            if row and (now - row[0] < cooldown_duration):
-                rem = int(cooldown_duration - (now - row[0]))
-                minutes, seconds = divmod(rem, 60)
-                return await interaction.response.send_message(
-                    f"<a:wt_toronerd:1480580983593111602> Lay low! Try again in **{minutes}m {seconds}s**.", 
-                    ephemeral=True
-                )
-            
-            cursor.execute("SELECT balance FROM wallets WHERE user_id = ?", (interaction.user.id,))
-            robber_bal = (cursor.fetchone() or [0])[0]
-            if robber_bal < 500:
-                return await interaction.response.send_message("❌ You need at least **A$ 500** to fund a robbery.", ephemeral=True)
-
-            cursor.execute("SELECT balance FROM wallets WHERE user_id = ?", (target.id,))
-            target_bal = (cursor.fetchone() or [0])[0]
-            if target_bal < 1000:
-                return await interaction.response.send_message(f"❌ **{target.name}** is broke.", ephemeral=True)
-
-            cursor.execute("INSERT OR REPLACE INTO command_cooldowns (user_id, command_name, last_used) VALUES (?, 'rob', ?)", (interaction.user.id, now))
-
-            if random.random() > 0.60: 
-                # FIX: Added missing second argument to random.uniform
-                stolen_amount = int(target_bal * random.uniform(0.05, 0.9)) 
-                atomic_balance_update(cursor, target.id, -stolen_amount)
-                atomic_balance_update(cursor, interaction.user.id, stolen_amount)
-                log_transaction(cursor, interaction.user.id, stolen_amount, "ROB_SUCCESS", f"Robbed {target.name}")
-                log_transaction(cursor, target.id, -stolen_amount, "ROBBED", f"Robbed by {interaction.user.name}")
-                embed = discord.Embed(title="꒰ა The Heist was a Success! ⸝⸝", color=0xffffff)
-                embed.description = f"You slipped past security and successfully robbed **{target.mention}**!\n\n**Stolen:** A$ {stolen_amount:,}"
-                await interaction.response.send_message(embed=embed)
-            else:
-                fine = max(500, int(robber_bal * 0.20))
-                atomic_balance_update(cursor, interaction.user.id, -fine)
-                log_transaction(cursor, interaction.user.id, -fine, "ROB_FAIL", f"Caught trying to rob {target.name}")
-                embed = discord.Embed(title="꒰ა Busted! ⸝⸝", color=0xffffff)
-                embed.description = f"You were caught trying to rob **{target.mention}**!\n\nFined **A$ {fine:,}**."
-                await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="statement", description="View your official Athena Bank transaction history")
     async def statement(self, interaction: discord.Interaction):

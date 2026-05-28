@@ -365,45 +365,47 @@ class Careers(commands.Cog):
 
     @app_commands.command(name="work", description="Work a shift at your job to earn A$ and XP")
     async def work(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+
         with get_db_cursor() as cursor:
             cursor.execute("SELECT path, level, xp, last_worked FROM user_careers WHERE user_id = ?", (interaction.user.id,))
             career = cursor.fetchone()
-            
+
             if not career:
-                return await interaction.response.send_message("<a:wt_torono:1480580892706603018> You are unemployed! Use `/career` to find a job.", ephemeral=True)
+                return await interaction.followup.send("<a:wt_torono:1480580892706603018> You are unemployed! Use `/career` to find a job.", ephemeral=True)
 
             path_key, level, xp, last_worked = career
-            
+
             # --- FETCH CAR DATA ONCE ---
             cursor.execute("""
-                SELECT MAX(m.cooldown_reduction), m.name 
-                FROM user_vehicles u 
-                JOIN market_vehicles m ON u.vehicle_id = m.id 
+                SELECT MAX(m.cooldown_reduction), m.name
+                FROM user_vehicles u
+                JOIN market_vehicles m ON u.vehicle_id = m.id
                 WHERE u.user_id = ? AND u.needs_repair = 0
                 ORDER BY m.price DESC LIMIT 1
             """, (interaction.user.id,))
             car_data = cursor.fetchone()
-            
+
             if car_data and car_data[0] is not None:
                 max_reduction_minutes = car_data[0]
                 car_name = car_data[1]
             else:
                 max_reduction_minutes = 0
                 car_name = "your feet"
-            
+
             # --- DYNAMIC COOLDOWN (Balanced) ---
             base_cooldown = 2700  # 45 minutes
             absolute_minimum = 900  # 15 minutes
-            
+
             calculated_cooldown = base_cooldown - (max_reduction_minutes * 60)
             actual_cooldown = max(absolute_minimum, calculated_cooldown)
-            
+
             now = time.time()
             if now - last_worked < actual_cooldown:
                 rem = int(actual_cooldown - (now - last_worked))
                 mins, secs = divmod(rem, 60)
-                return await interaction.response.send_message( 
-                    f"<a:wt_toronerd:1480580983593111602> You are too tired! Your next shift starts in **{mins}m {secs}s**.", 
+                return await interaction.followup.send(
+                    f"<a:wt_toronerd:1480580983593111602> You are too tired! Your next shift starts in **{mins}m {secs}s**.",
                     ephemeral=True
                 )
 
@@ -411,45 +413,43 @@ class Careers(commands.Cog):
             cursor.execute("SELECT active_card FROM wallets WHERE user_id = ?", (interaction.user.id,))
             card_row = cursor.fetchone()
             active_card = (card_row[0] if card_row else 'silver').strip()
-            
+
             path_data = CAREER_PATHS[path_key]
             current_level_data = path_data["levels"][level]
-            
+
             base_pay = current_level_data["base_pay"]
             mult = CARD_TIERS.get(active_card, CARD_TIERS["silver"])["multiplier"]
-            
+
             payout = int((base_pay * random.uniform(0.9, 1.2)) * mult)
-            
+
             # --- XP INCENTIVE ---
             gained_xp_base = random.randint(15, 30)
-            xp_mult = 1 + (max_reduction_minutes / 100) 
+            xp_mult = 1 + (max_reduction_minutes / 100)
             gained_xp = int(gained_xp_base * xp_mult)
             new_xp = xp + gained_xp
-            
+
             # --- CHECK PROMOTION ---
             is_max = level >= len(path_data["levels"]) - 1
             promoted = False
             new_level = level
-            
+
             if not is_max:
                 next_req = path_data["levels"][level + 1]["xp_req"]
                 if new_xp >= next_req:
                     promoted = True
                     new_level += 1
-            
+
             # --- UPDATE DATABASE ---
-            cursor.execute("UPDATE user_careers SET xp = ?, level = ?, last_worked = ? WHERE user_id = ?", 
+            cursor.execute("UPDATE user_careers SET xp = ?, level = ?, last_worked = ? WHERE user_id = ?",
                            (new_xp, new_level, now, interaction.user.id))
-            
+
         # --- DB IS NOW CLOSED ---
-        
-        # ✅ CRITICAL FIX: Use apply_balance_increase from economy.py to properly update highest_balance, 
-        # trigger card tier upgrades, and send the "Rich Person Detected" embed!
+
         from cogs.economy import apply_balance_increase
         await apply_balance_increase(interaction.user.id, payout, interaction.channel, tx_type="work")
-        
+
         task_done = random.choice(path_data["tasks"])
-        
+
         if path_key == "tech":
             flavor_msg = "<:btb_white3:1375474689467748517> **Shift Report:** You spent your shift debugging code for Athena."
         elif path_key == "medicine":
@@ -469,14 +469,14 @@ class Careers(commands.Cog):
             f"<:s_white2:1382052523166142486> **Earned:** A$ {payout:,} <:athenacoin:1503804322280902767>\n"
             f"<:s_white2:1382052523166142486> **XP Gained:** +{gained_xp} XP (Car Bonus included!)\n\n"
         )
-        
+
         if promoted:
             new_title = path_data["levels"][new_level]["title"]
             desc += f"<a:wt_toroexclaim:1480581004317036624> **PROMOTION!** You have climbed the ladder and are now a **{new_title}**! Your base salary has increased, continue working hard."
-            
+
         embed.description = desc
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
-        await interaction.response.send_message(embed=embed)
-
+        await interaction.followup.send(embed=embed)
+    
 async def setup(bot):
     await bot.add_cog(Careers(bot))
