@@ -109,8 +109,8 @@ CAREER_PATHS = {
         "levels": [
             {"title": "Foreign Service Intern", "base_pay": 900, "xp_req": 0},
             {"title": "Embassy Attaché", "base_pay": 1500, "xp_req": 150},
-            {"title": "Senior Ambassador", "base_pay": 3200, "xp_req": 500},
-            {"title": "Foreign Minister of Israel", "base_pay": 7500, "xp_req": 1200}
+            {"title": "Ambassador to Israel", "base_pay": 3200, "xp_req": 500},
+            {"title": "Foreign Minister", "base_pay": 7500, "xp_req": 1200}
         ]
     },
     "army": {
@@ -354,10 +354,10 @@ class Careers(commands.Cog):
             "**<:s_white2:1382052523166142486> Medical:** Hospital Volunteer > Registered Nurse > Junior Doctor > General Surgery Consultants\n\n"
             "**<:s_white2:1382052523166142486> Tech:** Software Engineering Intern > Junior Developer > Lead Engineer > Chief Technology Officer\n\n"
             "**<:s_white2:1382052523166142486> Finance:** Bank Teller > Financial Analyst > Portfolio Manager > Israeli Hedge Fund CEO\n\n"
-            "**<:s_white2:1382052523166142486> Diplomat:** Foreign Service Intern > Embassy Attaché > Senior Ambassador > Secretary of State\n\n"
-            "**<:s_white2:1382052523166142486> Army:** Private > Sergeant > Captain > Five-Star General\n\n"
-            "**<:s_white2:1382052523166142486> Navy:** Seaman Recruit > Petty Officer > Fleet Commander > Fleet Admiral\n\n"
-            "**<:s_white2:1382052523166142486> Air Force:** Airman > Staff Sergeant > Fighter Pilot > Air Force Chief of Staff\n\n"
+            "**<:s_white2:1382052523166142486> Diplomat:** Foreign Service Intern > Embassy Attaché > Ambassador to Israel > Foreign Minister\n\n"
+            "**<:s_white2:1382052523166142486> Army:** Private > Sergeant > Captain > Major\n\n"
+            "**<:s_white2:1382052523166142486> Navy:** Seaman Recruit > Petty Officer > Lieutenant Commander > Commander\n\n"
+            "**<:s_white2:1382052523166142486> Air Force:** Airman > Staff Sergeant > Fighter Pilot > Wing Commander\n\n"
             "*Note: Once you choose a career, you must reach the MAX level to switch it!*"
         )
         embed.set_image(url="https://media.discordapp.net/attachments/1375079530183790744/1501577920270041199/2227dbca3d307d172781fdb78c85f5ae.jpg?ex=6a01daea&is=6a00896a&hm=b7ae30d45a5a48da6327d1fe629ee924e09036c2aacae1ee55644c776f125881&&format=webp&width=1008&height=336")

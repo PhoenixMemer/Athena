@@ -1349,6 +1349,20 @@ class Business(commands.Cog):
                 else: await channel.send(embed=embed)
             except: pass
 
+    @app_commands.command(name="fixcountry", description="ADMIN: Add missing country column to businesses table")
+    @app_commands.default_permissions(administrator=True)
+    async def fix_country_column(self, i: discord.Interaction):
+        await i.response.defer(ephemeral=True)
+        with get_db_cursor() as c:
+            try:
+                c.execute("ALTER TABLE businesses ADD COLUMN country TEXT DEFAULT 'USA'")
+                await i.followup.send("<a:wt_toroexclaim:1480581004317036624> `country` column added successfully!", ephemeral=True)
+            except sqlite3.OperationalError as e:
+                if "duplicate column name" in str(e):
+                    await i.followup.send("✅ Column already exists.", ephemeral=True)
+                else:
+                    await i.followup.send(f"❌ Error: {e}", ephemeral=True)
+
     @app_commands.command(name="guidebiz", description="Read the official Athena Business Manual")
     async def bizguide(self, i: discord.Interaction):
         pages = []

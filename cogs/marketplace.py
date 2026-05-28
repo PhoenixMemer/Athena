@@ -571,23 +571,25 @@ class Marketplace(commands.Cog):
 
     @market_group.command(name="portfolio", description="View your real estate empire")
     async def portfolio(self, i: discord.Interaction):
+        await i.response.defer()
         with get_db_cursor() as c:
             c.execute("SELECT m.name, u.quality, m.base_rent, u.needs_repair FROM user_properties u JOIN market_properties m ON u.property_id = m.id WHERE u.user_id = ?", (i.user.id,))
             properties = c.fetchall()
-        if not properties: return await i.response.send_message("You do not own any real estate.", ephemeral=True)
-
+        if not properties:
+            return await i.followup.send("You do not own any real estate.", ephemeral=True)
+        
         e = discord.Embed(title=f"{i.user.name}'s Real Estate", color=0xffffff)
         total_rent = 0
         desc = ""
         for name, quality, base_rent, repair in properties:
             actual_rent = int(base_rent * (1.0 + (1.5 * (quality / 100.0)))) if not repair else 0
             total_rent += actual_rent
-            status = "**NEEDS SERVICE (Rent Paused)**" if repair else "✅ Active"
+            status = "**NEEDS SERVICE (Rent Paused)**" if repair else "Active"
             desc += f"**{name}**\n{make_progress_bar(quality)}\n**Status:** {status}\n<:athenacoin:1503804322280902767> **Daily Rent:** A$ {actual_rent:,}\n\n"
-            
+        
         desc += f"**Total Daily Rent:** `A$ {total_rent:,}`"
         e.description = desc
-        await i.response.send_message(embed=e)
+        await i.followup.send(embed=e)
 
     @app_commands.command(name="garage", description="View your luxury vehicle collection")
     async def garage(self, i: discord.Interaction):
