@@ -17,6 +17,7 @@ COMMANDS = [
     (DOT_EMOJI, "/work", "Work a shift and earn XP + A$\n"),
     (DOT_EMOJI, "/appoint", "Appoint a VP/COO/CFO for your business\n"),
     (DOT_EMOJI, "/bal", "View your wallet and debit card\n"),
+    (DOT_EMOJI, "/vanityinfo", "View all members with the vanity role\n"),
     (DOT_EMOJI, "/bizleaderboard", "Top companies by capital\n"),
     (DOT_EMOJI, "/blacklist", "Manage user blacklist (staff)\n"),
     (DOT_EMOJI, "/business", "Access your CEO terminal\n"),

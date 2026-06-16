@@ -43,16 +43,20 @@ class DropClaimView(discord.ui.View):
     """View for cash drops – allows up to 3 claims with random amounts per claim."""
     
     def __init__(self, total_claims: int = 3, min_amount: int = 500, max_amount: int = 2000):
-        super().__init__(timeout=120)  # 2 minutes to claim
+        super().__init__(timeout=300)          # 5 minutes total
         self.total_claims = total_claims
         self.claims_made = 0
         self.min_amount = min_amount
         self.max_amount = max_amount
-        self.claimed_users = set()  # Optional: prevent same user claiming twice
+        self.claimed_users = set()
+        self.created_at = time.time()
+        self.message = None   # to be set when sending
 
     async def update_drop_message(self, interaction: discord.Interaction, amount: int):
         """Edits the original embed to show remaining claims."""
-        embed = interaction.message.embeds[0] if interaction.message.embeds else discord.Embed(title="꒰ა Cash Drop ⸝⸝", color=0xffffff)
+        if not self.message:
+            return
+        embed = self.message.embeds[0] if self.message.embeds else discord.Embed(title="꒰ა Cash Drop ⸝⸝", color=0xffffff)
         remaining = self.total_claims - self.claims_made
         
         embed.description = (
@@ -61,60 +65,87 @@ class DropClaimView(discord.ui.View):
             f"Remaining drops: **{remaining}**\n\n"
             f"*<a:c_wip:1413158107856502874> Last claim:* {interaction.user.mention} got <:athenacoin:1503804322280902767> **A$ {amount:,}**"
         )
-        await interaction.message.edit(embed=embed)
+        try:
+            await self.message.edit(embed=embed)
+        except discord.NotFound:
+            pass
 
     @discord.ui.button(label="Snatch the Bag!", style=discord.ButtonStyle.secondary, emoji="<a:torosilly:1509258779617919086>")
     async def claim_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # 1. Check if drop is already fully claimed
-        if self.claims_made >= self.total_claims:
-            return await interaction.response.send_message(
-                "**Too late!** All three money bags have been snatched already.", 
-                ephemeral=True
-            )
-        
-        # 2. Optional: prevent the same user from claiming twice in the same drop
-        if interaction.user.id in self.claimed_users:
-            return await interaction.response.send_message(
-                "You already claimed from this drop! Let others have a chance.", 
-                ephemeral=True
-            )
-        
-        # 3. Generate random amount for this claim
-        amount = random.randint(self.min_amount, self.max_amount)
-        
-        # 4. Award the money
-        with get_db_cursor() as db:
-            db.execute("INSERT OR IGNORE INTO wallets (user_id, balance, active_card, highest_balance) VALUES (?, 0, 'silver', 0)", (interaction.user.id,))
-            atomic_balance_update(db, interaction.user.id, amount)
-        
-        # 5. Update state
-        self.claims_made += 1
-        self.claimed_users.add(interaction.user.id)
-        
-        # 6. If all claims are used, disable the button
+        # If button already disabled, ignore
+        if button.disabled:
+            return
+
+        # Manual timeout check
+        if time.time() - self.created_at > 300:
+            button.disabled = True
+            button.label = "Expired"
+            await interaction.response.edit_message(view=self)
+            try:
+                await interaction.followup.send("<a:wt_torono:1480580892706603018> This cash drop has expired!", ephemeral=True)
+            except:
+                pass
+            return
+
+        # Fully claimed?
         if self.claims_made >= self.total_claims:
             button.disabled = True
             button.label = "All Claimed!"
+            await interaction.response.edit_message(view=self)
+            try:
+                await interaction.response.send_message("**Too late!** All three money bags have been snatched already.", ephemeral=True)
+            except:
+                pass
+            return
         
-        # 7. Update the embed with remaining claims
+        # Duplicate user?
+        if interaction.user.id in self.claimed_users:
+            await interaction.response.send_message("You already claimed from this drop! Let others have a chance.", ephemeral=True)
+            return
+        
+        amount = random.randint(self.min_amount, self.max_amount)
+        
+        try:
+            with get_db_cursor() as db:
+                db.execute("INSERT OR IGNORE INTO wallets (user_id, balance, active_card, highest_balance) VALUES (?, 0, 'silver', 0)", (interaction.user.id,))
+                atomic_balance_update(db, interaction.user.id, amount)
+        except Exception:
+            await interaction.response.send_message("An error occurred while awarding the cash. Please try again later.", ephemeral=True)
+            return
+        
+        self.claims_made += 1
+        self.claimed_users.add(interaction.user.id)
+        
+        if self.claims_made >= self.total_claims:
+            button.disabled = True
+            button.label = "All Claimed!"
+            await interaction.response.edit_message(view=self)
+        
         await self.update_drop_message(interaction, amount)
         
-        # 8. Acknowledge the claim in the channel (public)
-        await interaction.channel.send(
-            f"<a:torosilly:1509258779617919086> **{interaction.user.mention}** claimed **A$ {amount:,}** from the drop! "
-            f"({self.claims_made}/{self.total_claims} claims used)"
-        )
-        
-        # 9. Acknowledge the button interaction (ephemeral)
         try:
-            await interaction.response.send_message(
-                f"You snatched **A$ {amount:,}**!! Congrats <a:wt_torocellphone:1503815758730366976>", 
-                ephemeral=True
+            await interaction.channel.send(
+                f"<a:torosilly:1509258779617919086> **{interaction.user.mention}** claimed **A$ {amount:,}** from the drop! "
+                f"({self.claims_made}/{self.total_claims} claims used)"
             )
-        except discord.NotFound:
-            # Interaction already acknowledged by something else – ignore
+        except:
             pass
+        
+        await interaction.response.send_message(
+            f"You snatched **A$ {amount:,}**!! Congrats <a:wt_torocellphone:1503815758730366976>", 
+            ephemeral=True
+        )
 
+    async def on_timeout(self):
+        for child in self.children:
+            child.disabled = True
+        if self.message:
+            try:
+                embed = self.message.embeds[0] if self.message.embeds else discord.Embed(title="꒰ა Cash Drop Expired ⸝⸝", color=0xffffff)
+                embed.description = "**Time's up!** The cash drop has expired. Better luck next time twin"
+                await self.message.edit(embed=embed, view=self)
+            except (discord.NotFound, AttributeError):
+                pass
 
 class ChatEvents(commands.Cog):
     def __init__(self, bot):
@@ -171,46 +202,43 @@ class ChatEvents(commands.Cog):
         # 💰 CASH DROP LOGIC (Multi‑claim)
         # ==========================================
         last_drop = self.get_tracker('last_cash_drop')
+        # If no record exists (e.g., first run), set it to now to avoid immediate spam
+        if last_drop == 0:
+            self.set_tracker('last_cash_drop', now)
+            last_drop = now
+
         time_since_drop = now - last_drop
         
-        # Force drop if it's been over 2 hours, regardless of chat activity
-        force_drop = time_since_drop > 7200
-        
-        if force_drop:
-            # Create a view that allows 3 claims, each between A$400 and A$1500
+        # Force drop if it's been over 2 hours
+        if time_since_drop > 7200:
             view = DropClaimView(total_claims=3, min_amount=800, max_amount=1500)
-            
             drop_embed = discord.Embed(
                 title="꒰ა A Wild Cash Drop Appeared! ⸝⸝",
-                description="<a:013Pink_Cat2:1509374529926070372> A bag of unmarked bills just fell from an armored truck!\n\n**0/3** claims used.",
+                description="<a:013Pink_Cat2:1509374529926070372> A bag of unmarked bills just fell from an armored truck!\n\n**0/3** claims used.\n Use /help to view where you can spend this!",
                 color=0xffffff
             )
-            await channel.send(embed=drop_embed, view=view)
+            
+            msg = await channel.send(embed=drop_embed, view=view)
+            view.message = msg
+            # IMPORTANT: Update the tracker so we don't send another drop for 2 hours
             self.set_tracker('last_cash_drop', now)
-
         # ==========================================
         # 🎟️ LOTTERY LOGIC (8 Hour Loop)
         # ==========================================
         last_draw = self.get_tracker('last_lottery_draw')
         time_since_draw = now - last_draw
         
-        # If it's been 8 hours, draw the winner and reset
         if time_since_draw >= 28800: 
             with get_db_cursor() as c:
-                c.execute("SELECT user_id FROM lottery_tickets")
-                tickets = c.fetchall()
-                
+                tickets = c.execute("SELECT user_id FROM lottery_tickets").fetchall()
                 if tickets:
                     winner_id = random.choice(tickets)[0]
                     pot = len(tickets) * 500
-                    
                     c.execute("INSERT OR IGNORE INTO wallets (user_id, balance, active_card, highest_balance) VALUES (?, 0, 'silver', 0)", (winner_id,))
                     atomic_balance_update(c, winner_id, pot)
                     c.execute("DELETE FROM lottery_tickets")
-                    
                     winner = self.bot.get_user(winner_id)
                     winner_mention = winner.mention if winner else f"User ID {winner_id}"
-                    
                     win_embed = discord.Embed(
                         title="꒰ა Lottery Winner Drawn! ⸝⸝",
                         description=f"**{winner_mention}** won the pot of **A$ {pot:,}**!\n\nThe next lottery cycle has started.",
@@ -220,8 +248,6 @@ class ChatEvents(commands.Cog):
                     await channel.send(embed=win_embed)
                 else:
                     await channel.send("🎟️ **Lottery Draw:** No one bought tickets this round! The pot resets.")
-            
-            # Reset draw timer and reminder flag
             self.set_tracker('last_lottery_draw', now)
             self.set_tracker('lottery_reminder_sent', 0)
 
@@ -229,7 +255,6 @@ class ChatEvents(commands.Cog):
         # 📢 LOTTERY REMINDER (Once per 8hr cycle)
         # ==========================================
         reminder_sent = self.get_tracker('lottery_reminder_sent')
-        # Send reminder halfway through the cycle (after 4 hours) if not sent yet
         if time_since_draw >= 14400 and reminder_sent == 0:
             rem_embed = discord.Embed(
                 title="꒰ა Lottery Reminder! ⸝⸝",
@@ -256,7 +281,7 @@ class ChatEvents(commands.Cog):
             description=f"You searched the couches and found **A$ {amount:,}**!",
             color=0xffffff
         )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.response.send_message(embed=embed, ephemeral=False)
 
     @pick.error
     async def pick_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
@@ -291,9 +316,9 @@ class ChatEvents(commands.Cog):
         embed = discord.Embed(
             title="🎟️ Lottery Ticket Purchased!",
             description=f"You entered the next 8‑hour draw.\n\n**Current jackpot:** A$ {current_pot:,}\n**Your ticket cost:** A$ 500",
-            color=0xffd700
+            color=0xffffff
         )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.response.send_message(embed=embed, ephemeral=False)
 
 async def setup(bot):
     await bot.add_cog(ChatEvents(bot))

@@ -40,9 +40,9 @@ class Vanity(commands.Cog):
             return False
         
         vanity_role = member.guild.get_role(self.vanity_role_id)
-        if not vanity_role:
-            logger.warning(f"⚠️ Vanity role ID {self.vanity_role_id} not found in guild {member.guild.name}")
-            return False
+        #if not vanity_role:
+            #logger.warning(f"⚠️ Vanity role ID {self.vanity_role_id} not found in guild {member.guild.name}")
+            #return False
         
         # Skip checking presence updates for offline members (but still allow manual checks)
         if member.status == discord.Status.offline and not force_check:

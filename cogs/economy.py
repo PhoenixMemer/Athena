@@ -6,13 +6,14 @@ from discord.ext import commands, tasks
 import sqlite3
 import os
 import io
+import asyncio
 import random
 import datetime
 import time
 from contextlib import contextmanager
 from PIL import Image, ImageDraw, ImageFont
 
-
+OWNER_IDS = {914507977573163068, 860192411627552788}
 BUSINESS_CHANNEL_ID = 1126516721952497756
 DB_PATH = "economy.db"
 
@@ -85,6 +86,11 @@ def get_db_cursor(db_path: str = DB_PATH):
         conn.close()
 
 CARD_TIERS = {
+    "owner1": {"threshold": 0, "file": "nami.png", "color": (39, 39, 39), "name": "Premier Edition", "multiplier": 3.5},
+    "owner2": {"threshold": 0, "file": "ari.png", "color": (244, 212, 242), "name": "Premier Edition", "multiplier": 3.5},
+    "cod": {"threshold": 5000, "file": "cod_limited.png", "color": (255, 255, 255), "name": "Limited 01", "multiplier": 1.5},
+    "sub": {"threshold": 5000, "file": "sub_limited.png", "color": (214, 214, 214), "name": "Limited 02", "multiplier": 1.5},
+    "blade": {"threshold": 5000, "file": "blade_limited.png", "color": (214, 214, 214), "name": "Limited 03", "multiplier": 1.5},
     "silver": {"threshold": 0, "file": "card_silver.png", "color": (255, 255, 255), "name": "Standard Silver", "multiplier": 1.0},
     "gold": {"threshold": 100000, "file": "card_gold.png", "color": (255, 255, 255), "name": "Gold Elite", "multiplier": 1.9},
     "crystal": {"threshold": 300000, "file": "card_crystal.png", "color": (255, 255, 255), "name": "Crystal Debit", "multiplier": 2.5},
@@ -97,6 +103,9 @@ CARD_TIERS = {
 }
 
 TIER_THRESHOLDS = [
+    (5000, "cod", "Limited 01"),
+    (5000, "sub", "Limited 02"),
+    (5000, "blade", "Limited 03"),
     (100000, "gold", "Gold Elite"),
     (300000, "crystal", "Crystal Debit"),
     (600000, "plat_black", "Platinum Black"),
@@ -128,38 +137,49 @@ def log_transaction(cursor, user_id: int, amount: int, tx_type: str, description
 async def apply_balance_increase(user_id: int, amount: int, channel: discord.TextChannel = None, tx_type: str = "credit"):
     with get_db_cursor() as cursor:
         cursor.execute("INSERT OR IGNORE INTO wallets (user_id, balance, active_card, highest_balance) VALUES (?, 0, 'silver', 0)", (user_id,))
-        
-        max_retries = 3
-        for attempt in range(max_retries):
-            if atomic_balance_update(cursor, user_id, amount):
+        for attempt in range(3):
+            cursor.execute("SELECT balance, highest_balance FROM wallets WHERE user_id = ?", (user_id,))
+            row = cursor.fetchone()
+            if row is None:
+                continue
+            old_balance, old_highest = row
+            new_balance = old_balance + amount
+            new_highest = max(old_highest, new_balance)
+            cursor.execute("UPDATE wallets SET balance = ?, highest_balance = ? WHERE user_id = ? AND balance = ?",
+                           (new_balance, new_highest, user_id, old_balance))
+            if cursor.rowcount > 0:
                 log_transaction(cursor, user_id, amount, tx_type, f"Auto-credit: {tx_type}")
-                
+
+                # card upgrade logic (unchanged)
                 cursor.execute("SELECT highest_balance, active_card FROM wallets WHERE user_id = ?", (user_id,))
                 row = cursor.fetchone()
-                if row is None: break
-                
-                highest, current_card = row
-                current_card = (current_card or "silver").strip()
-                new_card = current_card
-                unlocked_name = None
-                
-                # FIX: Removed 'break' so it correctly catches the HIGHEST tier crossed
-                for threshold, tier_key, tier_name in TIER_THRESHOLDS:
-                    if (highest - amount) < threshold <= highest:
-                        if tier_key != new_card:
-                            new_card = tier_key
-                            unlocked_name = tier_name
-                
-                if new_card != current_card:
-                    cursor.execute("UPDATE wallets SET active_card = ? WHERE user_id = ?", (new_card, user_id))
-                    log_transaction(cursor, user_id, 0, "UPGRADE", f"Card upgraded to {unlocked_name}")
-                
+                if row:
+                    highest, current_card = row
+                    current_card = (current_card or "silver").strip()
+                    new_card = current_card
+                    unlocked_name = None
+                # Skip auto‑upgrade for owners
+                if user_id in OWNER_IDS:
+                    new_card = current_card
+                    unlocked_name = None
+                else:
+                    new_card = current_card
+                    unlocked_name = None
+                    for threshold, tier_key, tier_name in TIER_THRESHOLDS:
+                        if (highest - amount) < threshold <= highest:
+                            if tier_key != new_card:
+                                new_card = tier_key
+                                unlocked_name = tier_name
+                    if new_card != current_card:
+                        cursor.execute("UPDATE wallets SET active_card = ? WHERE user_id = ?", (new_card, user_id))
+                        log_transaction(cursor, user_id, 0, "UPGRADE", f"Card upgraded to {unlocked_name}")
+
                 cursor.execute("SELECT balance FROM wallets WHERE user_id = ?", (user_id,))
                 final_bal = cursor.fetchone()[0]
-                break
-        else:
-            print(f"Balance update failed for user {user_id} after {max_retries} attempts")
-            return None, None, None
+                return final_bal, new_card, unlocked_name
+
+        print(f"Balance update failed for user {user_id} after 3 attempts")
+        return None, None, None
 
     return final_bal, new_card, unlocked_name
 
@@ -215,9 +235,8 @@ class SimplePaginationView(discord.ui.View):
         await interaction.response.edit_message(embed=self.get_embed(), view=self)
 
 class EarlyClaimView(discord.ui.View):
-    def __init__(self, db_path, user_id, amount):
+    def __init__(self, user_id, amount):
         super().__init__(timeout=60)
-        self.db_path = db_path
         self.user_id = user_id
         self.amount = amount
 
@@ -250,6 +269,13 @@ class EarlyClaimView(discord.ui.View):
         await interaction.response.edit_message(content="Canceled. Your stake remains safely locked.", embed=None, view=self)
 
 class Economy(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+        self.setup_db()
+        self.loan_debt_collector.start()
+        self.debt_penalty_loop.start()
+        self.wealth_tax.start()  # 👈 ADD THIS LINE
+
     def setup_db(self):
         with get_db_cursor() as cursor:
             cursor.execute('''CREATE TABLE IF NOT EXISTS wallets (
@@ -270,6 +296,11 @@ class Economy(commands.Cog):
             
             cursor.execute('''CREATE TABLE IF NOT EXISTS stakes (
                 user_id INTEGER PRIMARY KEY, amount INTEGER, unlock_time REAL, yield_rate REAL
+            )''')
+
+            cursor.execute('''CREATE TABLE IF NOT EXISTS cycle_tracker (
+                key TEXT PRIMARY KEY,
+                last_run REAL
             )''')
             
             cursor.execute('''CREATE TABLE IF NOT EXISTS config (
@@ -302,14 +333,26 @@ class Economy(commands.Cog):
 
     async def generate_wallet_card(self, member: discord.Member, balance: int, requested_card: str) -> io.BytesIO:
         valid_card = requested_card.strip() if requested_card else "silver"
-        if balance < CARD_TIERS[valid_card]["threshold"]:
-            if balance >= 4500000: valid_card = "world_debit"
-            elif balance >= 3000000: valid_card = "infinite"
-            elif balance >= 1200000: valid_card = "signature"
-            elif balance >= 600000: valid_card = "plat_black"
-            elif balance >= 300000: valid_card = "crystal"
-            elif balance >= 100000: valid_card = "gold"
-            else: valid_card = "silver"
+        
+        # Force custom card for owners
+        if member.id == 860192411627552788:
+            valid_card = "owner1"
+        elif member.id == 914507977573163068:
+            valid_card = "owner2"
+
+        # Only run normal tier logic if not owner (or if you still want to allow them to use other cards)
+        if member.id not in OWNER_IDS:
+            if balance < CARD_TIERS[valid_card]["threshold"]:
+                if balance >= 4500000: valid_card = "world_debit"
+                elif balance >= 3000000: valid_card = "infinite"
+                elif balance >= 1200000: valid_card = "signature"
+                elif balance >= 600000: valid_card = "plat_black"
+                elif balance >= 300000: valid_card = "crystal"
+                elif balance >= 100000: valid_card = "gold"
+                elif balance >= 5000: valid_card = "cod"
+                elif balance >= 5000: valid_card = "sub"
+                elif balance >= 5000: valid_card = "blade"
+                else: valid_card = "silver"
 
         card_info = CARD_TIERS[valid_card]
         img = Image.open(card_info["file"]).convert("RGBA")
@@ -363,6 +406,93 @@ class Economy(commands.Cog):
     async def before_tasks(self):
         await self.bot.wait_until_ready()
 
+    @tasks.loop(hours=24)
+    async def wealth_tax(self):
+        """Daily progressive wealth tax on personal wallet balances."""
+        with get_db_cursor() as cursor:
+            now = time.time()
+            cursor.execute("SELECT last_run FROM cycle_tracker WHERE key = 'wealth_tax'")
+            row = cursor.fetchone()
+            if row and (now - row[0]) < 86400:
+                return
+            cursor.execute("INSERT OR REPLACE INTO cycle_tracker (key, last_run) VALUES ('wealth_tax', ?)", (now,))
+
+            # Get all users with balance > 1.5M
+            cursor.execute("SELECT user_id, balance FROM wallets WHERE balance > 1500000")
+            users = cursor.fetchall()
+
+            for uid, old_bal in users:
+                bal = old_bal
+                # Progressive tax rates (0.5%, 1%, 2%)
+                tax = 0
+                if bal > 1_500_000:
+                    tax += int((min(bal, 5_000_000) - 1_500_000) * 0.005)   # 0.5%
+                if bal > 5_000_000:
+                    tax += int((min(bal, 10_000_000) - 5_000_000) * 0.03)   # 1%
+                if bal > 10_000_000:
+                    tax += int((bal - 10_000_000) * 0.05)                    # 2%
+
+                if tax <= 0:
+                    continue
+
+                # Retry loop (optimistic locking)
+                success = False
+                for attempt in range(3):
+                    cursor.execute("SELECT balance FROM wallets WHERE user_id = ?", (uid,))
+                    current_bal = cursor.fetchone()[0]
+                    if current_bal != bal:
+                        # Balance changed – recalc tax on the new balance
+                        bal = current_bal
+                        tax = 0
+                        if bal > 1_500_000:
+                            tax += int((min(bal, 5_000_000) - 1_500_000) * 0.005)
+                        if bal > 5_000_000:
+                            tax += int((min(bal, 10_000_000) - 5_000_000) * 0.03)
+                        if bal > 10_000_000:
+                            tax += int((bal - 10_000_000) * 0.05)
+                        if tax <= 0:
+                            break
+
+                    new_bal = bal - tax
+                    cursor.execute(
+                        "UPDATE wallets SET balance = ? WHERE user_id = ? AND balance = ?",
+                        (new_bal, uid, bal)
+                    )
+                    if cursor.rowcount > 0:
+                        success = True
+                        log_transaction(cursor, uid, -tax, "WEALTH_TAX", f"Daily tax on A$ {bal:,}")
+                        print(f"[WealthTax] User {uid} | Balance A$ {bal:,} → A$ {new_bal:,} | Tax A$ {tax:,}")
+                        # Send DM outside the loop? We'll do it inside the success block
+                        try:
+                            user = self.bot.get_user(uid)
+                            if user:
+                                embed = discord.Embed(
+                                    title="<:love:1509930644715868371> Wealth Tax Deducted",
+                                    description=(
+                                        f"The Central Reserve has deducted **A$ {tax:,}** from your wallet as your daily wealth tax contribution.\n\n"
+                                        f"Your new balance is **A$ {new_bal:,}**"
+                                    ),
+                                    color=0xffffff
+                                )
+                                await user.send(embed=embed)
+                        except Exception:
+                            pass
+                        break
+                    else:
+                        # Race condition – re‑read balance and retry
+                        cursor.execute("SELECT balance FROM wallets WHERE user_id = ?", (uid,))
+                        row2 = cursor.fetchone()
+                        if row2:
+                            bal = row2[0]
+                        await asyncio.sleep(0.1)
+
+                if not success:
+                    print(f"[WealthTax] Failed to tax user {uid} after 3 attempts. Balance may have changed.")
+
+    @wealth_tax.before_loop
+    async def before_wealth_tax(self):
+        await self.bot.wait_until_ready()
+
     @commands.command(name="bal", aliases=["balance", "b"])
     async def prefix_bal(self, ctx: commands.Context):
         try:
@@ -378,6 +508,12 @@ class Economy(commands.Cog):
                 await ctx.author.send("I don't have permission to type or send messages in that channel! Please ask a server admin to fix my permissions.")
             except discord.Forbidden:
                 pass # The user has their DMs locked too, just fail silently without crashing the bot
+
+    @app_commands.command(name="balance", description="View your wallet balance")
+    async def balance(self, interaction: discord.Interaction):
+        bal, active_card = self.get_wallet_data(interaction.user.id)
+        image_buffer = await self.generate_wallet_card(interaction.user, bal, active_card)
+        await interaction.response.send_message(file=discord.File(fp=image_buffer, filename="wallet.png"))
 
     @tasks.loop(hours=8)
     async def run_lottery(self):
@@ -401,13 +537,22 @@ class Economy(commands.Cog):
     @app_commands.command(name="statement", description="View your official Athena Bank transaction history")
     async def statement(self, interaction: discord.Interaction):
         await interaction.response.defer()
-        history = []
         with get_db_cursor() as cursor:
-            cursor.execute("SELECT amount, type, description, timestamp FROM transactions WHERE user_id = ? ORDER BY timestamp DESC LIMIT 50", (interaction.user.id,))
+            cursor.execute("""
+                SELECT amount, type, description, timestamp 
+                FROM transactions 
+                WHERE user_id = ? 
+                ORDER BY timestamp DESC 
+                LIMIT 50
+            """, (interaction.user.id,))
             history = cursor.fetchall()
 
         if not history:
-            return await interaction.followup.send("<a:wt_toroconfused:1480580932367945918> You have no transaction history.")
+            return await interaction.followup.send("<a:wt_toroconfused:1480580932367945918> You have no transaction history.", ephemeral=True)
+
+        # Calculate net change over these 50 transactions
+        net_change = sum(amount for amount, _, _, _ in history)
+        net_icon = "<:stockup_athena:1503776772850712616>" if net_change >= 0 else "<:stockdown_athena:1503776838789501171>"
 
         formatted_logs = []
         for amount, t_type, desc, ts in history:
@@ -415,7 +560,7 @@ class Economy(commands.Cog):
             type_upper = t_type.upper() if t_type else ""
             is_credit = type_upper in ("CREDIT", "DAILY", "WORK", "HEIST_WIN", "STAKING_CLAIM",
                                         "DIVIDEND", "TRANSFER_IN", "CASINO_WIN", "SELL_STOCK",
-                                        "RENT_INCOME", "LOAN_DISBURSED", "ROB_SUCCESS")
+                                        "RENT_INCOME", "LOAN_DISBURSED", "ROB_SUCCESS", "RENT_RETRY", "RENT_COMPENSATION")
 
             if is_credit:
                 icon = "<:income_athena:1503894488299343892>"
@@ -424,14 +569,40 @@ class Economy(commands.Cog):
                 icon = "<:expense_athena:1503894540220760226>"
                 amt_str = f"-A$ {abs(amount):,}"
 
-            formatted_logs.append(f"{icon} **{amt_str}** | {desc}\n└─ *{clean_time}*\n\n")
+            formatted_logs.append(f"{icon} **{amt_str}** – {desc}\n└─ *{clean_time}*\n\n")
 
-        view = SimplePaginationView(formatted_logs, "Official Bank Statement", items_per_page=5)
+        # Custom pagination view with improved embed
+        class StatementPaginationView(SimplePaginationView):
+            def get_embed(self):
+                embed = discord.Embed(
+                    title="꒰ა Official Bank Statement ⸝⸝",
+                    color=0xffffff,
+                    description="*Your recent account activity*"
+                )
+                embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
+                if not self.pages[0]:
+                    embed.description = "No transactions found."
+                else:
+                    page_data = self.pages[self.current_page]
+                    embed.description = "".join(page_data)
+                # Add net change field
+                embed.add_field(
+                    name=f"{net_icon} Net Change (last 50)",
+                    value=f"**{net_change:+,}** A$",
+                    inline=False
+                )
+                embed.set_footer(text=f"Page {self.current_page + 1}/{self.max_pages}")
+                return embed
+
+        view = StatementPaginationView(formatted_logs, "", items_per_page=5)
         await interaction.followup.send(embed=view.get_embed(), view=view)
 
     @app_commands.command(name="setcard", description="Equip an unlocked debit card tier")
     @app_commands.choices(card_type=[
         app_commands.Choice(name="Standard Silver (0+ A$)", value="silver"),
+        app_commands.Choice(name="Limited Edition 1 (5k+ A$)", value="cod"),
+        app_commands.Choice(name="Limited Edition 2 (5k+ A$)", value="sub"),
+        app_commands.Choice(name="Limited Edition 3 (5k+ A$)", value="blade"),
         app_commands.Choice(name="Gold Elite (100k+ A$)", value="gold"),
         app_commands.Choice(name="Crystal Debit (300k+ A$)", value="crystal"),
         app_commands.Choice(name="Platinum Black (600k+ A$)", value="plat_black"),
@@ -456,7 +627,7 @@ class Economy(commands.Cog):
 
     @app_commands.command(name="give", description="Transfer Athena Coins to another user")
     async def give(self, interaction: discord.Interaction, user: discord.Member, amount: int):
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer(ephemeral=False)
         if amount <= 0:
             return await interaction.followup.send("❌ Invalid amount.", ephemeral=True)
         if user.id == interaction.user.id:
@@ -598,7 +769,7 @@ class Economy(commands.Cog):
                     f"**Deposit:** A$ {amount:,}\n"
                     f"**Penalty Return:** A$ {int(amount - (amount * 0.15)):,}"
                 )
-                view = EarlyClaimView(self.db_path, interaction.user.id, amount)
+                view = EarlyClaimView(interaction.user.id, amount)
                 return await interaction.followup.send(embed=embed, view=view, ephemeral=False)
             
             payout = int(amount + (amount * rate))
@@ -614,49 +785,66 @@ class Economy(commands.Cog):
     @app_commands.checks.cooldown(1, 3600)
     async def rob(self, interaction: discord.Interaction, target: discord.Member):
         await interaction.response.defer()
+
         if target.id == interaction.user.id:
-            return await interaction.followup.send("You cannot rob yourself, fuckin weird init?", ephemeral=True)
+            return await interaction.followup.send("You cannot rob yourself, weirdo.", ephemeral=True)
         if target.bot:
             return await interaction.followup.send("You cannot rob a bot.", ephemeral=True)
-        
+
         with get_db_cursor() as cursor:
-            now = time.time()
-            cursor.execute("SELECT last_used FROM command_cooldowns WHERE user_id = ? AND command_name = 'rob'", (interaction.user.id,))
-            row = cursor.fetchone()
-            cooldown_duration = 3600
-            if row and (now - row[0] < cooldown_duration):
-                rem = int(cooldown_duration - (now - row[0]))
-                minutes, seconds = divmod(rem, 60)
-                return await interaction.followup.send(f"<a:wt_toronerd:1480580983593111602> Lay low! Try again in **{minutes}m {seconds}s**.", ephemeral=True)
-            
             cursor.execute("SELECT balance FROM wallets WHERE user_id = ?", (interaction.user.id,))
             robber_bal = (cursor.fetchone() or [0])[0]
             if robber_bal < 500:
                 return await interaction.followup.send("You need at least **A$ 500** to fund a robbery.", ephemeral=True)
-            
+
             cursor.execute("SELECT balance FROM wallets WHERE user_id = ?", (target.id,))
             target_bal = (cursor.fetchone() or [0])[0]
             if target_bal < 1000:
                 return await interaction.followup.send(f"**{target.name}** is broke :rofl:", ephemeral=True)
-            
-            cursor.execute("INSERT OR REPLACE INTO command_cooldowns (user_id, command_name, last_used) VALUES (?, 'rob', ?)", (interaction.user.id, now))
-            
+
             if random.random() > 0.65:
                 stolen_amount = int(target_bal * random.uniform(0.05, 0.9))
+                stolen_amount = min(stolen_amount, 130000)
                 atomic_balance_update(cursor, target.id, -stolen_amount)
                 atomic_balance_update(cursor, interaction.user.id, stolen_amount)
                 log_transaction(cursor, interaction.user.id, stolen_amount, "ROB_SUCCESS", f"Robbed {target.name}")
                 log_transaction(cursor, target.id, -stolen_amount, "ROBBED", f"Robbed by {interaction.user.name}")
+
+                # DM the victim
+                try:
+                    embed_victim = discord.Embed(
+                        title="꒰ა You’ve Been Robbed! ⸝⸝",
+                        description=f"<:014White_BearLaugh:1509881322477322290> **{interaction.user.name}** successfully stole A$ {stolen_amount:,} from you, loser.\n\n"
+                                    f"*The Central Reserve advises you to keep your wallet safer next time.*",
+                        color=0xffffff
+                    )
+                    embed_victim.set_thumbnail(url=interaction.user.display_avatar.url)
+                    await target.send(embed=embed_victim)
+                except discord.Forbidden:
+                    pass
+
                 embed = discord.Embed(title="꒰ა The Heist was a Success! ⸝⸝", color=0xffffff)
-                embed.description = f"<a:013Pink_Cat3:1390455852615340162> You slipped past security and successfully stole A$ {stolen_amount:,} from {target.mention}!"
+                embed.description = f"<a:cattojump:1509406633992917146> You slipped past security and successfully stole A$ {stolen_amount:,} from {target.mention}!"
                 await interaction.followup.send(embed=embed)
             else:
-                fine = max(500, int(robber_bal * 0.20))
+                fine = max(500, int(robber_bal * 0.10))
                 atomic_balance_update(cursor, interaction.user.id, -fine)
                 log_transaction(cursor, interaction.user.id, -fine, "ROB_FAIL", f"Caught trying to rob {target.name}")
                 embed = discord.Embed(title="꒰ა Busted! ⸝⸝", color=0xffffff)
-                embed.description = f"<:014White_BearLaugh:1265569134863974462> You were caught trying to rob **{target.mention}** and have been fined **A$ {fine:,}**!"
+                embed.description = f"<:014White_BearLaugh:1509881322477322290> You were caught trying to rob **{target.mention}** and have been fined **A$ {fine:,}**!"
                 await interaction.followup.send(embed=embed)
+
+
+    @rob.error
+    async def rob_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
+        if isinstance(error, app_commands.CommandOnCooldown):
+            minutes = int(error.retry_after // 60)
+            seconds = int(error.retry_after % 60)
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    f"<a:wt_toronerd:1480580983593111602> Lay low! Try again in **{minutes}m {seconds}s**.",
+                    ephemeral=True
+                )
 
     @app_commands.command(name="daily", description="Claim your daily Athena Reserve allowance")
     async def daily(self, interaction: discord.Interaction):
@@ -685,10 +873,7 @@ class Economy(commands.Cog):
         card_name = CARD_TIERS.get(active_card, CARD_TIERS["silver"])["name"]
         embed = discord.Embed(title="꒰ა Daily Reward ⸝⸝", color=0xffffff)
         embed.description = (
-            f"<a:wt_torolove:1480580899430203484> **Daily Allowance Credited**\n\n"
-            f"**Base:** A$ {base_payout:,}\n"
-            f"**{card_name} Bonus:** +A$ {payout - base_payout:,}\n"
-            f"**Total:** A$ {payout:,}"
+            f"<a:wt_torolove:1480580899430203484> **Daily Allowance Credited!** You have received a total of A$ {payout:,}, inclusive of card bonus.\nContinue to come back tomorrow!"
         )
         await interaction.followup.send(embed=embed)
 
@@ -701,7 +886,7 @@ class Economy(commands.Cog):
             success = random.random() < 0.40
             
             if success:
-                winnings = 10000
+                winnings = 15000
             else:
                 fine = 3000
                 atomic_balance_update(cursor, interaction.user.id, -fine)
@@ -715,6 +900,17 @@ class Economy(commands.Cog):
             embed = discord.Embed(title="꒰ა Heist Successful! ⸝⸝", color=0xffffff)
             embed.description = f"Stole **A$ {winnings:,}**!"
             await interaction.followup.send(embed=embed)
+
+    @heist.error
+    async def heist_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
+        if isinstance(error, app_commands.CommandOnCooldown):
+            minutes = int(error.retry_after // 60)
+            seconds = int(error.retry_after % 60)
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    f"<a:wt_toronerd:1480580983593111602> The heist crew needs a break! Try again in **{minutes}m {seconds}s**.",
+                    ephemeral=True
+                )
 
     @app_commands.command(name="set_rate", description="ADMIN: Set the Mimu exchange rate")
     async def set_rate(self, interaction: discord.Interaction, new_rate: int):
@@ -730,13 +926,11 @@ class Economy(commands.Cog):
 
     @app_commands.command(name="mint", description="ADMIN: Print Athena coins")
     async def mint_coins(self, interaction: discord.Interaction, user: discord.Member, amount: int):
-        await interaction.response.defer(ephemeral=True)  # <-- ADD THIS
+        await interaction.response.defer(ephemeral=False)
         if interaction.user.id != 743411894416834590:
             return await interaction.followup.send("❌ Access Denied.", ephemeral=True)
-    # ... rest of code, use followup.send instead of response.send_message
-
         await apply_balance_increase(user.id, amount, tx_type="admin_mint")
-        await interaction.response.send_message(f"✅ Minted {amount:,} to {user.mention}.")
+        await interaction.followup.send(f"Minted {amount:,} to {user.mention}.")
 
     @app_commands.command(name="deduct", description="ADMIN: Forcefully seize Athena coins")
     async def deduct_coins(self, interaction: discord.Interaction, user: discord.Member, amount: int):
@@ -756,4 +950,3 @@ class Economy(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(Economy(bot))
-

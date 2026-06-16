@@ -266,7 +266,7 @@ class CupidDashboard(commands.Cog):
         embed = discord.Embed(title="꒰ა ﹒chérie  ⸝⸝", color=0xffffff)
         embed.description = (
             "'As the Head of the Matchmaking Division, my objective is to ensure absolute precision in our matches."
-            "I am here to oversee your pairings, approve final matches, and resolve any operational anomalies.' **-Kades**\n\n"
+            "I am here to oversee your pairings, approve final matches, and resolve any operational anomalies.' **-Nami**\n\n"
             "**<a:wt_torolove:1480580899430203484> Standard Operating Procedures** <a:wt_torolove:1480580899430203484>\n\n"
             "<:s_white2:1382052523166142486> A minimum of 7 matches must be finalized weekly.\n\n"
             "<:s_white2:1382052523166142486> All forms must be reviewed with absolute scrutiny.\n\n"

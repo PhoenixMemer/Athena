@@ -4,11 +4,36 @@ from discord.ext import commands, tasks
 import sqlite3
 import random
 import time
+import asyncio
 from typing import List, Optional
 from contextlib import contextmanager
 
 DB_PATH = "economy.db"
 DEFAULT_NETWORTH_BANNER = "https://i.pinimg.com/originals/e8/f6/1b/e8f61b64959302d3b04a4db7dbb53f3a.gif"
+
+def make_quality_bar(percent: int) -> str:
+    """Creates a custom emoji progress bar for property quality (0-100) – 5 segments to avoid mobile wrapping."""
+    filled_segments = percent // 20          # 0-5 segments
+    empty_segments = 5 - filled_segments
+
+    fill_left = "<:fillleft:1502707988761153567>"
+    fill_mid = "<:fillmid:1502707936823087246>"
+    fill_right = "<:fillright:1502707911560794192>"
+    empty_left = "<:emptyleft:1502707971363311767>"
+    empty_mid = "<:emptymid:1502707866744651948>"
+    empty_right = "<:emptyright:1502707890664771717>"
+
+    bar = ""
+    for i in range(5):
+        is_filled = i < filled_segments
+        if i == 0:
+            bar += fill_left if is_filled else empty_left
+        elif i == 4:
+            bar += fill_right if is_filled else empty_right
+        else:
+            bar += fill_mid if is_filled else empty_mid
+
+    return f"{bar}  **({percent}%)**"
 
 # ==========================================
 # 🗄️ SAFE DATABASE CONTEXT MANAGER
@@ -33,28 +58,34 @@ def get_db_cursor():
 # ==========================================
 # 🔒 ATOMIC BALANCE & TRANSACTION HELPERS
 # ==========================================
-def atomic_balance_update(cursor, user_id: int, delta: int) -> bool:
-    """Atomically updates balance and highest_balance with optimistic locking."""
-    cursor.execute("SELECT balance, highest_balance FROM wallets WHERE user_id = ?", (user_id,))
-    row = cursor.fetchone()
+def atomic_balance_update(cursor, user_id: int, delta: int, max_retries: int = 10) -> bool:
+    """Atomically updates balance and highest_balance with optimistic locking and retries."""
+    for attempt in range(max_retries):
+        cursor.execute("SELECT balance, highest_balance FROM wallets WHERE user_id = ?", (user_id,))
+        row = cursor.fetchone()
+        
+        if row is None:
+            cursor.execute("INSERT OR IGNORE INTO wallets (user_id, balance, active_card, highest_balance) VALUES (?, 0, 'silver', 0)", (user_id,))
+            new_highest = max(0, delta)
+            cursor.execute("UPDATE wallets SET balance = ?, highest_balance = ? WHERE user_id = ?", (delta, new_highest, user_id))
+            return True
+        
+        old_balance = row[0] or 0
+        old_highest = row[1] or 0
+        new_balance = old_balance + delta
+        new_highest = max(old_highest, new_balance)
+        
+        cursor.execute(
+            "UPDATE wallets SET balance = ?, highest_balance = ? WHERE user_id = ? AND balance = ?",
+            (new_balance, new_highest, user_id, old_balance)
+        )
+        if cursor.rowcount > 0:
+            return True
+        
+        # Small exponential backoff before retry
+        time.sleep(0.1 * (2 ** attempt))
     
-    if row is None:
-        cursor.execute("INSERT OR IGNORE INTO wallets (user_id, balance, active_card, highest_balance) VALUES (?, 0, 'silver', 0)", (user_id,))
-        new_highest = max(0, delta)
-        cursor.execute("UPDATE wallets SET balance = ?, highest_balance = ? WHERE user_id = ?", (delta, new_highest, user_id))
-        return True
-    
-    old_balance = row[0] or 0
-    old_highest = row[1] or 0
-    new_balance = old_balance + delta
-    new_highest = max(old_highest, new_balance)
-    
-    # Only update if balance hasn't changed since we read it
-    cursor.execute(
-        "UPDATE wallets SET balance = ?, highest_balance = ? WHERE user_id = ? AND balance = ?",
-        (new_balance, new_highest, user_id, old_balance)
-    )
-    return cursor.rowcount > 0
+    return False
 
 def log_transaction(cursor, user_id: int, amount: int, tx_type: str, description: str):
     """Logs every balance change for audit trails"""
@@ -258,7 +289,7 @@ class MarketplaceDropdown(discord.ui.Select):
         category = self.values[0]
         self.view.current_category = category
         self.view.buy_btn.disabled = False
-        
+
         with get_db_cursor() as cursor:
             if category == "P2P":
                 cursor.execute('''SELECT l.id, m.name, l.price, l.seller_id 
@@ -273,7 +304,6 @@ class MarketplaceDropdown(discord.ui.Select):
                     desc += f"**<a:014White_Heart2:1509413123810136196> Seller:** {s_name}\n"
                     desc += f"<:athenacoin:1503804322280902767> **Price:** A$ {price:,}\n\n"
                 embed.description = desc if listings else "The trading floor is currently empty. List your properties with `/marketplace list`!"
-                
 
             elif category in ["Car", "Yacht", "Jet"]:
                 cursor.execute("SELECT id, name, price, cooldown_reduction FROM market_vehicles WHERE category = ?", (category,))
@@ -282,14 +312,14 @@ class MarketplaceDropdown(discord.ui.Select):
                 desc = "Luxury assets. Owning these boosts prestige (will soon have perks for businesses)\n\n"
                 for vid, name, price, bonus in vehicles:
                     desc += f"<a:014White_Heart2:1509413123810136196> **{name}** `[{vid}]`\n"
-                    if bonus > 0: desc += f"<a:014White_Heart2:1509413123810136196> **Commute Bonus:** -{bonus}m On Work Cooldown\n"
+                    if bonus > 0:
+                        desc += f"<a:014White_Heart2:1509413123810136196> **Commute Bonus:** -{bonus}m On Work Cooldown\n"
                     desc += f"<:athenacoin:1503804322280902767> **Price:** A$ {price:,}\n\n"
                 embed.description = desc
 
-
-            
             elif category == "Vehicles":
-                cursor.execute("SELECT id, name, price, cooldown_reduction FROM market_vehicles")
+                # Show only cars (not yachts or jets)
+                cursor.execute("SELECT id, name, price, cooldown_reduction FROM market_vehicles WHERE category = 'Car'")
                 vehicles = cursor.fetchall()
                 embed = discord.Embed(title="Athena Showroom", color=0xffffff)
                 desc = "Luxury vehicles. Owning these reduces your `/work` cooldown.\n\n"
@@ -298,7 +328,7 @@ class MarketplaceDropdown(discord.ui.Select):
                     desc += f"**<a:014White_Heart2:1509413123810136196> Commute Bonus:** -{bonus}m On Work Cooldown\n"
                     desc += f"<:athenacoin:1503804322280902767> **Price:** A$ {price:,}\n\n"
                 embed.description = desc
-                
+
             else:
                 cursor.execute("SELECT id, name, base_price, base_rent FROM market_properties WHERE category = ?", (category,))
                 properties = cursor.fetchall()
@@ -326,29 +356,37 @@ class MarketplaceView(discord.ui.View):
 
     async def buy_callback(self, interaction: discord.Interaction):
         cat = self.current_category
-        if not cat: return
-        
+        if not cat:
+            return
+
         with get_db_cursor() as c:
             options_view = discord.ui.View(timeout=60)
-            
-            if cat == "Vehicles":
-                c.execute("SELECT id FROM market_vehicles")
+
+            # Handle all vehicle categories (Car, Yacht, Jet, Vehicles)
+            if cat in ("Vehicles", "Car", "Yacht", "Jet"):
+                if cat == "Vehicles":
+                    # Show only cars
+                    c.execute("SELECT id FROM market_vehicles WHERE category = 'Car'")
+                else:
+                    # Show only vehicles matching the category
+                    c.execute("SELECT id FROM market_vehicles WHERE category = ?", (cat,))
                 for (vid,) in c.fetchall()[:25]:
                     options_view.add_item(BuyOptionButton(vid, "vehicle"))
+
             elif cat == "P2P":
                 c.execute("SELECT id FROM p2p_listings")
                 for (lid,) in c.fetchall()[:25]:
                     options_view.add_item(BuyOptionButton(str(lid), "p2p"))
             else:
+                # Real estate categories (Residential, Commercial, Elite)
                 c.execute("SELECT id FROM market_properties WHERE category = ?", (cat,))
                 for (pid,) in c.fetchall()[:25]:
                     options_view.add_item(BuyOptionButton(pid, "property"))
-                    
-            if len(options_view.children) == 0:
-                return await interaction.response.send_message(" No items available to buy in this category.", ephemeral=True)
-                
-            await interaction.response.send_message(" **Select an asset code to purchase:**", view=options_view, ephemeral=True)
 
+            if len(options_view.children) == 0:
+                return await interaction.response.send_message("No items available to buy in this category.", ephemeral=True)
+
+            await interaction.response.send_message("**Select an asset code to purchase:**", view=options_view, ephemeral=True)
 
 # ==========================================
 # 🏙️ THE MARKETPLACE COG
@@ -364,7 +402,13 @@ class Marketplace(commands.Cog):
         with get_db_cursor() as cursor:
             cursor.execute('CREATE TABLE IF NOT EXISTS market_properties (id TEXT PRIMARY KEY, name TEXT, category TEXT, base_price INTEGER, base_rent INTEGER)')
             cursor.execute('CREATE TABLE IF NOT EXISTS user_properties (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, property_id TEXT, quality INTEGER DEFAULT 20, needs_repair INTEGER DEFAULT 0, UNIQUE(user_id, property_id))')
-            
+            cursor.execute('''CREATE TABLE IF NOT EXISTS rent_failures (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                property_id TEXT,
+                amount INTEGER,
+                failed_at REAL
+            )''')
             cursor.execute('CREATE TABLE IF NOT EXISTS market_vehicles (id TEXT PRIMARY KEY, name TEXT, price INTEGER, cooldown_reduction INTEGER, category TEXT DEFAULT "Car")')
             cursor.execute('CREATE TABLE IF NOT EXISTS user_vehicles (user_id INTEGER, vehicle_id TEXT, needs_repair INTEGER DEFAULT 0, UNIQUE(user_id, vehicle_id))')
             
@@ -382,7 +426,7 @@ class Marketplace(commands.Cog):
                 key TEXT PRIMARY KEY,
                 last_run REAL
             )''')
-            
+
             try: cursor.execute("ALTER TABLE market_vehicles ADD COLUMN category TEXT DEFAULT 'Car'")
             except: pass
             try: cursor.execute("ALTER TABLE wallets ADD COLUMN profile_banner TEXT")
@@ -428,47 +472,129 @@ class Marketplace(commands.Cog):
                 ('COM3', 'Greggs', 'Commercial', 150000, 7500),
                 ('COM4', 'Weatherspoons Pub', 'Commercial', 250000, 12500),
                 ('COM5', 'Peppa Pig World', 'Commercial', 1500000, 75000),
-                ('COM6', 'Ferrari Land', 'Commercial', 3000000, 95000),
+                ('COM6', 'Sanrio Studios', 'Commercial', 3500000, 75000),
+                ('COM7', 'Ferrari Land', 'Commercial', 4000000, 95000),
                 ('ELI1', 'The Windsor Estate', 'Elite', 5000000, 250000),
                 ('ELI2', 'Chelsea Penthouse', 'Elite', 8000000, 400000),
                 ('ELI3', 'Buckingham Manor', 'Elite', 15000000, 750000)
             ]
             cursor.executemany("INSERT OR REPLACE INTO market_properties VALUES (?, ?, ?, ?, ?)", properties)
 
-    # ==========================================
-    #  AUTOMATED BACKGROUND TASKS
-    # ==========================================
+    @app_commands.command(name="fix_vehicles_force", description="ADMIN: Force rebuild vehicle table with all assets")
+    @app_commands.default_permissions(administrator=True)
+    async def fix_vehicles_force(self, i: discord.Interaction):
+        await i.response.defer(ephemeral=True)
+        with get_db_cursor() as c:
+            # Drop and recreate the table to ensure correct schema
+            c.execute("DROP TABLE IF EXISTS market_vehicles")
+            c.execute('''CREATE TABLE market_vehicles (
+                id TEXT PRIMARY KEY,
+                name TEXT,
+                price INTEGER,
+                cooldown_reduction INTEGER,
+                category TEXT DEFAULT 'Car'
+            )''')
+            # Insert all vehicles: cars, yachts, jets
+            vehicles = [
+                # Cars
+                ('CAR1', 'Mini Cooper S', 15000, 20, 'Car'),
+                ('CAR2', 'Land Rover Defender', 45000, 30, 'Car'),
+                ('CAR3', 'Jaguar F-Type', 95000, 35, 'Car'),
+                ('CAR4', 'Aston Martin DB12', 185000, 40, 'Car'),
+                ('CAR5', 'Chevrolet Corvette ZR1', 195000, 45, 'Car'),
+                ('CAR6', 'Rolls-Royce Cullinan', 250000, 50, 'Car'),
+                ('CAR7', 'Ferrari SF90 Stradale', 320000, 60, 'Car'),
+                # Yachts
+                ('YACHT1', 'Sunseeker Predator 84', 15000000, 0, 'Yacht'),
+                ('YACHT2', 'Benetti Oasis 67', 25000000, 0, 'Yacht'),
+                ('YACHT3', 'Azzam Superyacht', 35000000, 0, 'Yacht'),
+                ('YACHT4', 'Cassiopeia', 45000000, 0, 'Yacht'),
+                ('YACHT5', 'Polaris Valencia', 55000000, 0, 'Yacht'),
+                # Jets
+                ('JET1', 'Cessna Citation CJ4', 7000000, 0, 'Jet'),
+                ('JET2', 'Gulfstream G700', 15000000, 0, 'Jet'),
+                ('JET3', 'Dassault Falcon 10X', 25000000, 0, 'Jet'),
+                ('JET4', 'Bombardier Global 6000', 35000000, 0, 'Jet')
+            ]
+            c.executemany("INSERT INTO market_vehicles (id, name, price, cooldown_reduction, category) VALUES (?, ?, ?, ?, ?)", vehicles)
+        await i.followup.send("✅ Vehicle table rebuilt with all cars, yachts, and jets.", ephemeral=True)
+
     # ==========================================
     #  AUTOMATED BACKGROUND TASKS
     # ==========================================
     @tasks.loop(hours=24)
     async def rent_collection(self):
+        import datetime
         with get_db_cursor() as cursor:
-            # ---- GUARD: only run once per real 24h ----
-            now = time.time()
+            # Guard using date string (compatible with old data)
             cursor.execute("SELECT last_run FROM cycle_tracker WHERE key = 'last_rent_cycle'")
             row = cursor.fetchone()
-            if row and (now - row[0]) < 86400:
-                return  # already ran today
-            cursor.execute("INSERT OR REPLACE INTO cycle_tracker (key, last_run) VALUES ('last_rent_cycle', ?)", (now,))
-            # ---- END GUARD ----
+            today = datetime.datetime.now().strftime("%Y-%m-%d")
+            if row and row[0] == today:
+                return
 
-            cursor.execute('''SELECT u.user_id, m.base_rent, u.quality 
+            print(f"[RENT] Starting rent collection at {datetime.datetime.now()}")
+
+            cursor.execute('''SELECT u.user_id, m.base_rent, u.quality, u.property_id, m.category
                               FROM user_properties u JOIN market_properties m ON u.property_id = m.id 
                               WHERE u.needs_repair = 0''')
-            for uid, base_rent, quality in cursor.fetchall():
-                mult = 1.0 + (1.5 * (quality / 100.0))
-                rent = int(base_rent * mult)
-                if atomic_balance_update(cursor, uid, rent):
-                    log_transaction(cursor, uid, rent, "RENT_INCOME", "Daily rent from property")
-                    check_tier_upgrade(cursor, uid)
+            properties = cursor.fetchall()
 
+            failed_payments = []
+
+            for uid, base_rent, quality, prop_id, category in properties:
+                try:
+                    mult = 1.0 + (1.5 * (quality / 100.0))
+                    gross_rent = int(base_rent * mult)
+
+                    if category == 'Residential':
+                        tax_rate = 0.05
+                    elif category == 'Commercial':
+                        tax_rate = 0.20
+                    elif category == 'Elite':
+                        tax_rate = 0.35
+                    else:
+                        tax_rate = 0.0
+
+                    tax = int(gross_rent * tax_rate)
+                    net_rent = gross_rent - tax
+
+                    success = False
+                    for attempt in range(5):
+                        if atomic_balance_update(cursor, uid, net_rent):
+                            log_transaction(cursor, uid, net_rent, "RENT_INCOME", 
+                                            f"Daily rent from {prop_id} (quality {quality}%) - Tax A${tax:,}")
+                            if tax > 0:
+                                log_transaction(cursor, uid, -tax, "PROPERTY_TAX", 
+                                                f"Tax on {prop_id} ({category})")
+                            check_tier_upgrade(cursor, uid)
+                            success = True
+                            break
+                        await asyncio.sleep(0.2)
+                    if not success:
+                        failed_payments.append((uid, prop_id, net_rent))
+                        print(f"[RENT FAIL] User {uid}, property {prop_id}, amount A${net_rent:,} – will be retried manually")
+                except Exception as e:
+                    print(f"[RENT ERROR] User {uid}, property {prop_id}: {e}")
+
+            if failed_payments:
+                try:
+                    cursor.execute("CREATE TABLE IF NOT EXISTS rent_failures (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, property_id TEXT, amount INTEGER, failed_at REAL)")
+                    now_ts = time.time()
+                    for uid, pid, amt in failed_payments:
+                        cursor.execute("INSERT INTO rent_failures (user_id, property_id, amount, failed_at) VALUES (?, ?, ?, ?)", (uid, pid, amt, now_ts))
+                except:
+                    pass
+
+            cursor.execute("INSERT OR REPLACE INTO cycle_tracker (key, last_run) VALUES ('last_rent_cycle', ?)", (today,))
+
+            
     @tasks.loop(hours=24)
     async def maintenance_sweep(self):
         with get_db_cursor() as cursor:
             cursor.execute("SELECT id FROM user_properties WHERE needs_repair = 0")
             for (pid,) in cursor.fetchall():
-                if random.random() < 0.10: 
+                if random.random() < 0.24: 
                     cursor.execute("UPDATE user_properties SET needs_repair = 1 WHERE id = ?", (pid,))
                     
             cursor.execute("SELECT user_id, vehicle_id FROM user_vehicles WHERE needs_repair = 0")
@@ -492,6 +618,78 @@ class Marketplace(commands.Cog):
     # ==========================================
     # ️ COMMANDS
     # ==========================================
+
+    @app_commands.command(name="rent", description="Retry all failed rent payments from the last cycle")
+    @app_commands.default_permissions(administrator=True)
+    async def retry_rent(self, i: discord.Interaction):
+        await i.response.defer(ephemeral=True)
+        with get_db_cursor() as c:
+            # Check if table exists
+            c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='rent_failures'")
+            if not c.fetchone():
+                return await i.followup.send("No failed rent payments to retry (table doesn't exist yet).", ephemeral=True)
+            
+            c.execute("SELECT id, user_id, property_id, amount FROM rent_failures")
+            failures = c.fetchall()
+            if not failures:
+                return await i.followup.send("No failed rent payments to retry.", ephemeral=True)
+
+            retried = 0
+            still_failed = []
+            for fid, uid, pid, amt in failures:
+                if atomic_balance_update(c, uid, amt):
+                    log_transaction(c, uid, amt, "RENT_RETRY", f"Retroactive rent from {pid}")
+                    c.execute("DELETE FROM rent_failures WHERE id = ?", (fid,))
+                    retried += 1
+                else:
+                    still_failed.append(fid)
+
+            if still_failed:
+                print(f"[RENT RETRY] {len(still_failed)} payments still failed")
+                await i.followup.send(f"✅ Successfully retried {retried} payments. {len(still_failed)} remain failed.", ephemeral=True)
+            else:
+                await i.followup.send(f"✅ All {retried} failed rent payments have been processed.", ephemeral=True)
+
+    @app_commands.command(name="compensate_rent", description="ADMIN: Pay 3 days of missed rent to all property owners")
+    @app_commands.default_permissions(administrator=True)
+    async def compensate_rent(self, i: discord.Interaction):
+        await i.response.defer(ephemeral=True)
+        with get_db_cursor() as c:
+            c.execute('''SELECT u.user_id, m.base_rent, u.quality, u.property_id, m.category
+                         FROM user_properties u JOIN market_properties m ON u.property_id = m.id
+                         WHERE u.needs_repair = 0''')
+            properties = c.fetchall()
+
+            payments = {}
+            for uid, base_rent, quality, prop_id, category in properties:
+                mult = 1.0 + (1.5 * (quality / 100.0))
+                gross_rent = int(base_rent * mult)
+
+                if category == 'Residential':
+                    tax_rate = 0.05
+                elif category == 'Commercial':
+                    tax_rate = 0.20
+                elif category == 'Elite':
+                    tax_rate = 0.35
+                else:
+                    tax_rate = 0.0
+
+                tax = int(gross_rent * tax_rate)
+                net_rent = gross_rent - tax
+                # 3 days missed
+                total_rent = net_rent * 3
+                payments[uid] = payments.get(uid, 0) + total_rent
+
+            # Pay each user
+            paid_users = 0
+            for uid, amount in payments.items():
+                if atomic_balance_update(c, uid, amount):
+                    log_transaction(c, uid, amount, "RENT_COMPENSATION", f"3 days missed rent (manual)")
+                    paid_users += 1
+
+            await i.followup.send(f"✅ Compensated {paid_users} users with a total of A$ {sum(payments.values()):,} for 3 missed rent days.", ephemeral=True)
+
+
     market_group = app_commands.Group(name="marketplace", description="Buy assets and manage your empire")
 
     @market_group.command(name="browse", description="Browse real estate, vehicles, and player listings")
@@ -519,34 +717,51 @@ class Marketplace(commands.Cog):
         
         await i.response.send_message(embed=discord.Embed(title="<:house_athena:1501918600787922944> Asset Listed", description=f"Property listed for A$ {price:,} on the trading floor.", color=0xffffff))
 
-    @market_group.command(name="repair", description="Pay A$ 500 per broken asset to restore your empire")
+    @market_group.command(name="repair", description="Pay to restore broken assets")
     async def repair_assets(self, i: discord.Interaction):
+        await i.response.defer()
         with get_db_cursor() as c:
-            c.execute("SELECT id FROM user_properties WHERE user_id = ? AND needs_repair = 1", (i.user.id,))
-            broken_props = c.fetchall()
+            # Get broken properties
+            c.execute("SELECT property_id FROM user_properties WHERE user_id = ? AND needs_repair = 1", (i.user.id,))
+            broken_props = [r[0] for r in c.fetchall()]
+            # Get broken vehicles
             c.execute("SELECT vehicle_id FROM user_vehicles WHERE user_id = ? AND needs_repair = 1", (i.user.id,))
-            broken_vehs = c.fetchall()
+            broken_vehs = [r[0] for r in c.fetchall()]
             
             total_broken = len(broken_props) + len(broken_vehs)
             if total_broken == 0:
-                return await i.response.send_message("✅ All your assets are in perfect condition!", ephemeral=True)
-                
-            cost = total_broken * 500
+                return await i.followup.send("Sonion all your assets are in perfect condition..", ephemeral=True)
+            
+            # Calculate repair cost based on asset value
+            repair_cost = 0
+            for pid in broken_props:
+                c.execute("SELECT base_price FROM market_properties WHERE id = ?", (pid,))
+                base = c.fetchone()[0]
+                repair_cost += int(base * 0.009)  # 0.5% of property value
+            for vid in broken_vehs:
+                c.execute("SELECT price FROM market_vehicles WHERE id = ?", (vid,))
+                price = c.fetchone()[0]
+                repair_cost += int(price * 0.01)   # 1% of vehicle value
+            
+            # Ensure minimum repair cost of A$500 per asset (optional)
+            min_repair = total_broken * 500
+            repair_cost = max(repair_cost, min_repair)
+            
             c.execute("SELECT balance FROM wallets WHERE user_id = ?", (i.user.id,))
             bal_row = c.fetchone()
             bal = bal_row[0] if bal_row else 0
-            if bal < cost:
-                return await i.response.send_message(f"❌ You need A$ {cost:,} to repair your {total_broken} broken assets.", ephemeral=True)
-                
-            if not atomic_balance_update(c, i.user.id, -cost):
-                return await i.response.send_message("❌ Balance updated concurrently. Please try again.", ephemeral=True)
-            log_transaction(c, i.user.id, -cost, "ASSET_REPAIR", f"Repaired {total_broken} assets")
+            if bal < repair_cost:
+                return await i.followup.send(f"❌ You need **A$ {repair_cost:,}** to repair your {total_broken} broken assets.", ephemeral=True)
+            
+            if not atomic_balance_update(c, i.user.id, -repair_cost):
+                return await i.followup.send("❌ Balance updated concurrently. Please try again.", ephemeral=True)
+            log_transaction(c, i.user.id, -repair_cost, "ASSET_REPAIR", f"Repaired {total_broken} assets (scale cost)")
             
             c.execute("UPDATE user_properties SET needs_repair = 0 WHERE user_id = ?", (i.user.id,))
             c.execute("UPDATE user_vehicles SET needs_repair = 0 WHERE user_id = ?", (i.user.id,))
         
-        e = discord.Embed(title="🔧 Maintenance Complete", description=f"You paid **A$ {cost:,}** to fully service your empire. Rent yields and work bonuses have resumed!", color=0xffffff)
-        await i.response.send_message(embed=e)
+        e = discord.Embed(title="🔧 Maintenance Complete", description=f"You paid **A$ {repair_cost:,}** to fully service your empire. Rent yields and work bonuses have resumed!", color=0xffffff)
+        await i.followup.send(embed=e)
 
     @market_group.command(name="renovate", description="Fund a renovation shift (+20% Quality)")
     @app_commands.autocomplete(property_id=owned_prop_auto)
@@ -573,23 +788,87 @@ class Marketplace(commands.Cog):
     async def portfolio(self, i: discord.Interaction):
         await i.response.defer()
         with get_db_cursor() as c:
-            c.execute("SELECT m.name, u.quality, m.base_rent, u.needs_repair FROM user_properties u JOIN market_properties m ON u.property_id = m.id WHERE u.user_id = ?", (i.user.id,))
+            # Fetch user's custom banner (same as networth)
+            c.execute("SELECT profile_banner FROM wallets WHERE user_id = ?", (i.user.id,))
+            banner_row = c.fetchone()
+            profile_banner = banner_row[0] if banner_row and banner_row[0] else None
+
+            c.execute("""
+                SELECT m.name, u.quality, m.base_rent, u.needs_repair, m.category, m.base_price
+                FROM user_properties u 
+                JOIN market_properties m ON u.property_id = m.id 
+                WHERE u.user_id = ?
+            """, (i.user.id,))
             properties = c.fetchall()
+
+            c.execute("SELECT SUM(ABS(amount)) FROM transactions WHERE user_id = ? AND type = 'PROPERTY_TAX'", (i.user.id,))
+            total_tax = c.fetchone()[0] or 0
+
         if not properties:
-            return await i.followup.send("You do not own any real estate.", ephemeral=True)
-        
-        e = discord.Embed(title=f"{i.user.name}'s Real Estate", color=0xffffff)
-        total_rent = 0
-        desc = ""
-        for name, quality, base_rent, repair in properties:
-            actual_rent = int(base_rent * (1.0 + (1.5 * (quality / 100.0)))) if not repair else 0
-            total_rent += actual_rent
-            status = "**NEEDS SERVICE (Rent Paused)**" if repair else "Active"
-            desc += f"**{name}**\n{make_progress_bar(quality)}\n**Status:** {status}\n<:athenacoin:1503804322280902767> **Daily Rent:** A$ {actual_rent:,}\n\n"
-        
-        desc += f"**Total Daily Rent:** `A$ {total_rent:,}`"
-        e.description = desc
-        await i.followup.send(embed=e)
+            return await i.followup.send("You do not own any real estate... smells of broke here.", ephemeral=True)
+
+        embed = discord.Embed(
+            title="꒰ა Real Estate Portfolio ⸝⸝",
+            description=f"*Properties owned by {i.user.display_name}*",
+            color=0xffffff
+        )
+        embed.set_thumbnail(url=i.user.display_avatar.url)
+
+        # Add banner image if the user has one (same as networth)
+        if profile_banner:
+            embed.set_image(url=profile_banner)
+
+        total_daily_rent = 0
+        total_market_value = 0
+
+        for name, quality, base_rent, needs_repair, category, base_price in properties:
+            if needs_repair:
+                daily_rent = 0
+                status_emoji = "<a:wt_torosob:1480580873782034483>"
+                status_text = "Needs Repair"
+            else:
+                mult = 1.0 + (1.5 * (quality / 100.0))
+                gross_rent = int(base_rent * mult)
+                tax_rate = 0.05 if category == 'Residential' else 0.20 if category == 'Commercial' else 0.35
+                tax = int(gross_rent * tax_rate)
+                daily_rent = gross_rent - tax
+                status_emoji = "<a:wt_torohearts:1480580920737005672>"
+                status_text = "Active"
+
+            total_daily_rent += daily_rent
+            total_market_value += base_price
+
+            bar = make_quality_bar(quality)
+
+            embed.add_field(
+                name=f"{status_emoji} **{name}**",
+                value=(
+                    f"{bar}\n"
+                    f"└ **Daily Rent:** A$ {daily_rent:,}\n"
+                    f"└ **Status:** {status_text}\n"
+                    f"└ **Category:** {category}\n\n"
+                ),
+                inline=False
+            )
+
+        embed.add_field(
+            name="<:athenacoin:1503804322280902767> Total Daily Rent",
+            value=f"**A$ {total_daily_rent:,}**",
+            inline=True
+        )
+        embed.add_field(
+            name="<:s_white2:1382052523166142486> Market Value",
+            value=f"**A$ {total_market_value:,}**",
+            inline=True
+        )
+        embed.add_field(
+            name="<:s_white2:1382052523166142486> Lifetime Tax Paid",
+            value=f"**A$ {total_tax:,}**",
+            inline=True
+        )
+
+        embed.set_footer(text="Rent is paid daily at 00:00 UTC")
+        await i.followup.send(embed=embed)
 
     @app_commands.command(name="garage", description="View your luxury vehicle collection")
     async def garage(self, i: discord.Interaction):

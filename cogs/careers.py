@@ -33,15 +33,20 @@ def get_db_cursor():
 # 📊 CAREER PATHS & CARD MULTIPLIERS
 # ==========================================
 CARD_TIERS = {
+    "owner1": {"threshold": 0, "file": "nami.png", "color": (39, 39, 39), "name": "Premier Edition", "multiplier": 3.5},
+    "owner2": {"threshold": 0, "file": "ari.png", "color": (244, 212, 242), "name": "Premier Edition", "multiplier": 3.5},
+    "cod": {"threshold": 5000, "file": "cod_limited.png", "color": (255, 255, 255), "name": "Limited 01", "multiplier": 1.5},
+    "sub": {"threshold": 5000, "file": "sub_limited.png", "color": (214, 214, 214), "name": "Limited 02", "multiplier": 1.5},
+    "blade": {"threshold": 5000, "file": "blade_limited.png", "color": (214, 214, 214), "name": "Limited 03", "multiplier": 1.5},
     "silver": {"threshold": 0, "file": "card_silver.png", "color": (255, 255, 255), "name": "Standard Silver", "multiplier": 1.0},
     "gold": {"threshold": 100000, "file": "card_gold.png", "color": (255, 255, 255), "name": "Gold Elite", "multiplier": 1.9},
     "crystal": {"threshold": 300000, "file": "card_crystal.png", "color": (255, 255, 255), "name": "Crystal Debit", "multiplier": 2.5},
     "plat_black": {"threshold": 600000, "file": "card_plat_black.png", "color": (214, 214, 214), "name": "Platinum Black", "multiplier": 3.5},
     "plat_pink": {"threshold": 600000, "file": "card_plat_pink.png", "color": (219, 120, 200), "name": "Platinum Chérie", "multiplier": 3.5},
     "signature": {"threshold": 1200000, "file": "card_signature.png", "color": (214, 214, 214), "name": "VISA Signature", "multiplier": 4.9},
-    "signature_pink": {"threshold": 1200000, "file": "card_sigpink.png", "color": (255, 255, 255), "name": "VISA Chérie Signature", "multiplier": 4.9},
-    "infinite": {"threshold": 3000000, "file": "card_infinite.png", "color": (214, 214, 214), "name": "VISA Infinite", "multiplier": 5.3},
-    "world_debit": {"threshold": 4500000, "file": "card_worlddebit.png", "color": (214, 214, 214), "name": "VISA World Debit", "multiplier": 5.7}
+    "signature_pink": {"threshold": 1200000, "file": "card_sigpink.png", "color": (255, 255, 255), "name": "VISA Chérie Signature", "multiplier": 5.3},
+    "infinite": {"threshold": 3000000, "file": "card_infinite.png", "color": (214, 214, 214), "name": "VISA Infinite", "multiplier": 6.5},
+    "world_debit": {"threshold": 4500000, "file": "card_worlddebit.png", "color": (214, 214, 214), "name": "VISA World Debit", "multiplier": 10.0}
 }
 
 CAREER_PATHS = {
@@ -163,6 +168,25 @@ CAREER_PATHS = {
             {"title": "Fighter Pilot", "base_pay": 3200, "xp_req": 500},
             {"title": "Wing Commander", "base_pay": 4000, "xp_req": 800}
         ]
+    },
+    "hockey": {
+        "name": "Hockey Operations",
+        "emoji": "🏒",
+        "tasks": [
+            "scouting prospects at a junior league tournament ",
+            "analyzing advanced analytics and Corsi ratings ",
+            "negotiating entry-level contracts with draft picks ",
+            "managing the team's salary cap space ",
+            "overseeing the minor league affiliate's development program "
+        ],
+        "levels": [
+            {"title": "Hockey Operations Intern ", "base_pay": 900, "xp_req": 0},
+            {"title": "Coordinator ", "base_pay": 1500, "xp_req": 150},
+            {"title": "Manager of Hockey Operations ", "base_pay": 3200, "xp_req": 500},
+            {"title": "Director of Player Personnel ", "base_pay": 5500, "xp_req": 1200},
+            {"title": "General Manager ", "base_pay": 8000, "xp_req": 2500},
+            {"title": "President/CEO ", "base_pay": 12000, "xp_req": 5000}
+        ]
     }
 }
 
@@ -199,6 +223,7 @@ class CareerDropdown(discord.ui.Select):
             discord.SelectOption(label='Diplomatic Corps', description='Negotiate peace as Secretary of State.', value='diplomat', emoji='<:diplomacy:1509315782650237162>'),
             discord.SelectOption(label='Army', description='Lead ground assaults as an Army Officer.', value='army', emoji='🪖'),
             discord.SelectOption(label='Navy', description='Command the seas as a Navy Officer.', value='navy', emoji='⚓'),
+            discord.SelectOption(label='Hockey Operations', description='Build a championship roster from the ground up.', value='hockey', emoji='🏒'),
             discord.SelectOption(label='Air Force', description='Dominate the skies as an Air Force pilot.', value='air_force', emoji='<:air_force:1509315094868394105>')
         ]
         super().__init__(placeholder='Select a career path...', min_values=1, max_values=1, options=options)
@@ -358,6 +383,7 @@ class Careers(commands.Cog):
             "**<:s_white2:1382052523166142486> Army:** Private > Sergeant > Captain > Major\n\n"
             "**<:s_white2:1382052523166142486> Navy:** Seaman Recruit > Petty Officer > Lieutenant Commander > Commander\n\n"
             "**<:s_white2:1382052523166142486> Air Force:** Airman > Staff Sergeant > Fighter Pilot > Wing Commander\n\n"
+            "** <:s_white2:1382052523166142486 > Hockey:** Intern  > Coordinator  > Manager of Hockey Operations  > Director of Player Personnel  > General Manager  > President\n\n "
             "*Note: Once you choose a career, you must reach the MAX level to switch it!*"
         )
         embed.set_image(url="https://i.pinimg.com/1200x/01/b9/0e/01b90ed975824daa7f09ea32fe3b9013.jpg")
@@ -456,6 +482,8 @@ class Careers(commands.Cog):
             flavor_msg = "<:btb_white3:1375474689467748517> **Shift Report:** You spent your shift in the bunker treating burn unit patients."
         elif path_key == "finance":
             flavor_msg = "<:btb_white3:1375474689467748517> **Shift Report:** You spent your shift on the trading floor hiding tax gains."
+        elif path_key == "hockey":
+            flavor_msg = " <:btb_white3:1375474689467748517> **Shift Report:** You spent your shift at the rink managing the front office. "
         elif path_key in ["diplomat", "army", "navy", "air_force"]:
             flavor_msg = f"<:btb_white3:1375474689467748517> **Shift Report:** You spent your shift serving the {path_data['name']} branch."
         else:
